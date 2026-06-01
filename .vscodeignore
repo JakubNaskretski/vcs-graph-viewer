@@ -1,0 +1,14 @@
+.vscode/**
+.github/**
+.claude/**
+src/**
+node_modules/**
+.gitignore
+dev/**
+examples/**
+samples/**
+**/*.graph.json
+esbuild.js
+tsconfig.json
+**/*.map
+**/*.ts

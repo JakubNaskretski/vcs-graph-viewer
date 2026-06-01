@@ -1,0 +1,202 @@
+{
+  "name": "vcs-grap-viewer",
+  "displayName": "Graph Viewer",
+  "description": "Visualize and explore a metadata graph (nodes + edges) as an interactive, filterable map — an Obsidian-style graph view inside your editor.",
+  "version": "0.1.0",
+  "publisher": "vcs-grap-viewer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JakubNaskretski/vcs-grap-viewer.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "graph",
+    "visualization",
+    "knowledge graph",
+    "salesforce",
+    "obsidian"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "graphViewer.open",
+        "title": "Open Graph Viewer",
+        "category": "Graph Viewer"
+      },
+      {
+        "command": "graphViewer.selectFile",
+        "title": "Select Graph File…",
+        "category": "Graph Viewer"
+      },
+      {
+        "command": "graphViewer.reload",
+        "title": "Reload Graph",
+        "category": "Graph Viewer"
+      },
+      {
+        "command": "graphViewer.generate",
+        "title": "Generate Graph from Folder…",
+        "category": "Graph Viewer",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "graphViewer.import",
+        "title": "Import graph.json into Library",
+        "category": "Graph Viewer",
+        "icon": "$(add)"
+      },
+      {
+        "command": "graphViewer.openStored",
+        "title": "Open Graph",
+        "category": "Graph Viewer",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "graphViewer.deleteStored",
+        "title": "Delete Graph",
+        "category": "Graph Viewer",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "graphViewer.refreshLibrary",
+        "title": "Refresh Library",
+        "category": "Graph Viewer",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "graphViewer",
+          "title": "Graph Viewer",
+          "icon": "media/graph-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "graphViewer": [
+        {
+          "id": "graphViewer.library",
+          "name": "Graphs",
+          "contextualTitle": "Graph Viewer",
+          "icon": "media/graph-icon.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "graphViewer.library",
+        "contents": "No graphs in your library yet.\n\nBuild one from a source folder, or import an existing graph.json.\n[Generate from folder](command:graphViewer.generate)\n[Import graph.json](command:graphViewer.import)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "graphViewer.open",
+          "when": "resourceFilename =~ /\\.json$/",
+          "group": "navigation@99"
+        },
+        {
+          "command": "graphViewer.import",
+          "when": "resourceFilename =~ /\\.json$/",
+          "group": "navigation@100"
+        },
+        {
+          "command": "graphViewer.generate",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@100"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "graphViewer.generate",
+          "when": "view == graphViewer.library",
+          "group": "navigation@1"
+        },
+        {
+          "command": "graphViewer.import",
+          "when": "view == graphViewer.library",
+          "group": "navigation@2"
+        },
+        {
+          "command": "graphViewer.refreshLibrary",
+          "when": "view == graphViewer.library",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "graphViewer.openStored",
+          "when": "view == graphViewer.library && viewItem == graphEntry",
+          "group": "navigation@1"
+        },
+        {
+          "command": "graphViewer.deleteStored",
+          "when": "view == graphViewer.library && viewItem == graphEntry",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Graph Viewer",
+      "properties": {
+        "graphViewer.graphPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the graph.json produced by graph-builder. Relative paths resolve against the workspace folder. Leave empty to be prompted."
+        },
+        "graphViewer.reloadOnChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically reload the view when the graph file changes on disk."
+        },
+        "graphViewer.physics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the graph in continuous motion so it gently settles and reacts to dragging and hovering (Obsidian-like). Turn off for a static layout."
+        },
+        "graphViewer.spacing": {
+          "type": "number",
+          "default": 100,
+          "minimum": 20,
+          "maximum": 500,
+          "description": "Spacing between nodes. Higher values spread the graph out more."
+        },
+        "graphViewer.animateOnHover": {
+          "type": "boolean",
+          "default": true,
+          "description": "Gently nudge and highlight a node's neighbors when you hover it (requires Physics for the motion)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run check-types && node esbuild.js --production",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "check-types": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "cytoscape": "^3.30.2",
+    "cytoscape-cola": "^2.5.1",
+    "cytoscape-fcose": "^2.2.0",
+    "fast-xml-parser": "^4.5.6"
+  },
+  "devDependencies": {
+    "@types/cytoscape": "^3.21.8",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  }
+}
