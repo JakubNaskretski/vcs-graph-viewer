@@ -178,6 +178,26 @@ function resolveSObjectType(operand: string, typeMap: Record<string, string>): s
   return mvar ? typeMap[mvar[1]] ?? "" : "";
 }
 
+/** A class-like reference (PascalCase, not an sObject token) — `calls`/`new` target. */
+function looksLikeClass(name: string): boolean {
+  if (!name || /__(?:c|mdt|e|x|b|share|history)$/i.test(name)) return false;
+  if (COLLECTION_WRAPPERS.has(name.toLowerCase())) return false;
+  return name[0] === name[0].toUpperCase() && name[0] !== name[0].toLowerCase();
+}
+
+/** Loop and catch variable types: `for (Account a : rows)`, `catch (DmlException e)`.
+ *  These are extremely common in Apex but the plain declaration regex misses them. */
+function loopVarTypes(code: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of code.matchAll(/\bfor\s*\(\s*(?:final\s+)?([A-Za-z]\w*(?:__(?:c|mdt))?)\s+(\w+)\s*:/gi)) {
+    if (isSobjectType(m[1]) && !(m[2] in out)) out[m[2]] = m[1];
+  }
+  for (const m of code.matchAll(/\bcatch\s*\(\s*([A-Za-z]\w*)\s+(\w+)\s*\)/gi)) {
+    if (isSobjectType(m[1]) && !(m[2] in out)) out[m[2]] = m[1];
+  }
+  return out;
+}
+
 class ApexExtractor implements Extractor {
   source = "salesforce";
 
@@ -249,6 +269,18 @@ class ApexExtractor implements Extractor {
     for (const m of code.matchAll(/\b(\w+__c)\s*\.\s*(?:getInstance|getOrgDefaults|getValues)\s*\(/gi)) refs.add(m[1]);
     for (const o of [...refs].sort()) edges.push(rawEdge(cid, "references", "object", o));
 
+    // `new ClassName(` / `new List<ClassName>(` -> calls -> apexclass (constructed types)
+    const newClasses = new Set<string>();
+    for (const m of code.matchAll(/\bnew\s+([A-Za-z]\w*)\s*(?:<\s*(?:[A-Za-z]\w*\s*,\s*)?([A-Za-z]\w*)\s*>)?/g)) {
+      let t = m[1];
+      if (COLLECTION_WRAPPERS.has(t.toLowerCase())) {
+        if (!m[2]) continue; // bare `new List()` — no element type
+        t = m[2];
+      }
+      if (t !== cname && looksLikeClass(t)) newClasses.add(t);
+    }
+    for (const c of [...newClasses].sort()) edges.push(rawEdge(cid, "calls", "apexclass", c));
+
     this.deep(src, cname, cid, nodes, edges, asyncKinds);
 
     if (asyncKinds.length) {
@@ -319,7 +351,7 @@ class ApexExtractor implements Extractor {
    *  call-site async — the higher-fidelity edges a real parser would give. */
   private astLite(mid: string, body: string, params: string, edges: RawEdge[], asyncKinds: string[]): void {
     const code = stripStringLiterals(body);
-    const symbols = { ...paramTypes(params), ...localTypeMap(code) };
+    const symbols = { ...paramTypes(params), ...localTypeMap(code), ...loopVarTypes(code) };
 
     // instance calls: `var.method(` where `var` has a known declared type
     const seenCall = new Set<string>();
