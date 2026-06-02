@@ -19,6 +19,17 @@ interface Settings {
   motionMaxNodes: number;
 }
 
+// Sent by the host alongside each graph: which view we're in (container-level vs
+// full) and the counts behind the "Show all / Collapse" toggle.
+interface Meta {
+  mode: "containers" | "all";
+  totalNodes: number;
+  totalEdges: number;
+  shownNodes: number;
+  shownEdges: number;
+  hasNested: boolean;
+}
+
 const accent =
   getComputedStyle(document.body).getPropertyValue("--vscode-focusBorder").trim() || "#4C8DFF";
 
@@ -30,6 +41,7 @@ const nodeFiltersEl = $<HTMLDivElement>("#node-filters");
 const edgeFiltersEl = $<HTMLDivElement>("#edge-filters");
 const searchEl = $<HTMLInputElement>("#search");
 const statusEl = $<HTMLSpanElement>("#status");
+const modeEl = $<HTMLButtonElement>("#mode");
 
 // ---- state ----
 let cy: Core | undefined;
@@ -39,6 +51,7 @@ const enabledNodeTypes = new Set<string>();
 const enabledEdgeTypes = new Set<string>();
 let selectedId: string | undefined;
 let settings: Settings = { physics: true, spacing: 150, animateOnHover: true, motionMaxNodes: 800 };
+let currentMeta: Meta | undefined;
 
 // ---- gentle-drift animation state ----
 let driftRAF: number | undefined;
@@ -50,14 +63,40 @@ window.addEventListener("message", (event) => {
   const msg = event.data;
   if (msg?.type === "setGraph") {
     if (msg.settings) settings = msg.settings as Settings;
+    currentMeta = (msg.meta as Meta | undefined) ?? undefined;
     graph = msg.graph as Graph;
     build(graph);
+    updateModeUI();
   } else if (msg?.type === "updateSettings") {
     applySettings(msg.settings as Settings);
   }
 });
 
 vscodeApi.postMessage({ type: "ready" });
+
+// "Show all" / "Collapse to containers" toggle. The host owns the data and the
+// (modal) confirmation for showing a huge graph; we just request the switch.
+modeEl.addEventListener("click", () => {
+  const target = modeEl.dataset.target;
+  if (target) vscodeApi.postMessage({ type: "setViewMode", mode: target });
+});
+
+function updateModeUI(): void {
+  if (!currentMeta || !currentMeta.hasNested) {
+    modeEl.hidden = true;
+    return;
+  }
+  modeEl.hidden = false;
+  if (currentMeta.mode === "containers") {
+    modeEl.textContent = `Show all (${currentMeta.totalNodes.toLocaleString()})`;
+    modeEl.title = "Show every node, including fields/methods/elements (may be slow on large graphs)";
+    modeEl.dataset.target = "all";
+  } else {
+    modeEl.textContent = "Collapse to containers";
+    modeEl.title = "Roll fields/methods/elements up into their parent objects/classes/flows";
+    modeEl.dataset.target = "containers";
+  }
+}
 
 // ---- build ----
 function build(g: Graph): void {
@@ -90,6 +129,7 @@ function build(g: Graph): void {
     elements.push({ data: { id: `e${i}`, source: e.src, target: e.dst, type: e.type } });
   });
 
+  const bigRender = g.nodes.length > 1500;
   stopDrift();
   cy?.destroy();
   cy = cytoscape({
@@ -97,7 +137,8 @@ function build(g: Graph): void {
     elements,
     wheelSensitivity: 0.2,
     textureOnViewport: true, // faster pan/zoom on big graphs
-    style: buildStyle(maxDeg),
+    hideEdgesOnViewport: bigRender, // don't redraw every edge mid pan/zoom
+    style: buildStyle(maxDeg, bigRender),
   });
 
   cy.on("tap", "node", (evt) => select((evt.target as NodeSingular).id()));
@@ -133,9 +174,15 @@ function runLayout(): void {
     requestAnimationFrame(() => {
       if (!cy) return;
       cy.resize();
-      cy.zoom(1.5);
-      if (cy.nodes().length > 0) {
-        cy.center(cy.nodes().max((n) => Number(n.data("deg")) || 0).ele);
+      const n = cy.nodes().length;
+      if (n > 1500) {
+        // Big map: fit the whole thing so the user sees the overall shape rather
+        // than landing zoomed onto a single hub in a sea of nodes.
+        cy.fit(undefined, 30);
+      } else {
+        // Land zoomed-in, centered on the most-connected (and largest) node.
+        cy.zoom(1.5);
+        if (n > 0) cy.center(cy.nodes().max((d) => Number(d.data("deg")) || 0).ele);
       }
       if (driftEligible()) startDrift();
     });
@@ -194,13 +241,17 @@ function stopDrift(): void {
 }
 
 function fcoseOptions(spacing: number, count: number): cytoscape.LayoutOptions {
+  // "draft" skips the expensive force-iteration refinement — essential to keep a
+  // multi-thousand-node container map from locking up during layout.
+  const big = count > 1200;
   return {
     name: "fcose",
-    quality: "default",
+    quality: big ? "draft" : "default",
     animate: count <= 200,
     randomize: true,
     fit: true,
     padding: 40,
+    samplingType: true,
     nodeRepulsion: 4500 + spacing * 30,
     idealEdgeLength: spacing,
     nodeSeparation: Math.max(20, spacing * 0.85),
@@ -208,7 +259,7 @@ function fcoseOptions(spacing: number, count: number): cytoscape.LayoutOptions {
   } as unknown as cytoscape.LayoutOptions;
 }
 
-function buildStyle(maxDeg: number): cytoscape.StylesheetStyle[] {
+function buildStyle(maxDeg: number, bigRender = false): cytoscape.StylesheetStyle[] {
   return [
     {
       selector: "node",
@@ -222,7 +273,9 @@ function buildStyle(maxDeg: number): cytoscape.StylesheetStyle[] {
         "text-valign": "bottom",
         "text-halign": "center",
         "text-margin-y": 2,
-        "min-zoomed-font-size": 8,
+        // On big maps only draw labels once zoomed in fairly close — labelling
+        // thousands of nodes at once is a major render cost.
+        "min-zoomed-font-size": bigRender ? 14 : 8,
         "border-width": 0,
         "transition-property": "width height border-width border-color background-blacken opacity",
         "transition-duration": 130,
@@ -238,8 +291,10 @@ function buildStyle(maxDeg: number): cytoscape.StylesheetStyle[] {
         width: 1,
         "line-color": "#5a5a5a",
         "line-opacity": 0.5,
-        "curve-style": "straight",
-        "target-arrow-shape": "triangle",
+        // Big maps use "haystack" — the cheapest edge renderer (no bezier/arrow
+        // math), at the cost of arrowheads. Small graphs keep directional arrows.
+        "curve-style": bigRender ? "haystack" : "straight",
+        "target-arrow-shape": bigRender ? "none" : "triangle",
         "target-arrow-color": "#5a5a5a",
         "arrow-scale": 0.6,
       },
@@ -474,10 +529,22 @@ $<HTMLButtonElement>("#toggle-filters").addEventListener("click", () => {
 // ---- helpers ----
 function updateStatus(): void {
   if (!cy || !graph) return;
+  const drawn = graph.nodes.length;
   const visibleNodes = cy.nodes().filter((n) => n.style("display") !== "none").length;
-  const total = graph.nodes.length;
-  const shown = visibleNodes === total ? `${total} nodes` : `${visibleNodes}/${total} nodes`;
-  statusEl.textContent = `${shown} · ${graph.edges.length} edges`;
+  const nodePart = visibleNodes === drawn ? `${fmt(drawn)} nodes` : `${fmt(visibleNodes)}/${fmt(drawn)} nodes`;
+  let prefix = "";
+  let suffix = "";
+  if (currentMeta) {
+    prefix = currentMeta.mode === "containers" ? "containers · " : "full · ";
+    if (currentMeta.mode === "containers" && currentMeta.totalNodes > drawn) {
+      suffix = ` (of ${fmt(currentMeta.totalNodes)})`;
+    }
+  }
+  statusEl.textContent = `${prefix}${nodePart} · ${fmt(graph.edges.length)} edges${suffix}`;
+}
+
+function fmt(n: number): string {
+  return n.toLocaleString();
 }
 
 function countBy(items: string[]): Map<string, number> {

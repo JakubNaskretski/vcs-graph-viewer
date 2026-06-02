@@ -80,6 +80,23 @@ button:hover {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
 }
 
+/* View-mode toggle (container map <-> full graph) — the primary action when a
+   large graph is collapsed, so it uses the accent button colors. */
+.mode-btn {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mode-btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.mode-btn[hidden] {
+  display: none;
+}
+
 /* Filters sidebar */
 #filters {
   grid-row: 2;

@@ -7,10 +7,16 @@ click any node to read its attributes and relationships.
 ## What it shows
 
 - **Graph map** — a force-directed layout you can pan, zoom, and drag. Nodes are
-  sized by how connected they are and colored by type. Physics settle the layout
-  and react to hover/drag (Obsidian-style).
+  sized by how connected they are and colored by type. The layout settles, then the
+  nodes keep a gentle Obsidian-style drift; hovering highlights a node and its
+  neighbors (and dims the rest) without disturbing the layout.
+- **Scales to large graphs** — graphs above ~2,500 nodes open as a **container map**:
+  fine-grained nodes (fields, Apex methods, flow elements, record types, list views)
+  roll up into their parent object/class/flow, edges and all, so you get a readable
+  module-level view instead of a frozen hairball. A **Show all** toggle in the
+  toolbar expands to every node (behind a confirmation, since it can be heavy).
 - **Filters** — toggle node types and edge types on/off to focus the map; search
-  nodes by name.
+  nodes by name. Work in either the container map or the full graph.
 - **Node details** — click a node to see its attributes plus every incoming and
   outgoing relationship, grouped by edge type. Click a related node to jump to it.
 - **Graphs side panel** — a library of your graphs in the Activity Bar. Generate,
@@ -52,9 +58,10 @@ The graph is plain JSON; any tool that emits the same shape works:
 | ----------------------------- | ------- | ------------------------------------------------------- |
 | `graphViewer.graphPath`       | `""`    | Path to the graph file. Relative paths resolve against the workspace. |
 | `graphViewer.reloadOnChange`  | `true`  | Reload the view when the graph file changes on disk.    |
-| `graphViewer.physics`         | `true`  | Keep the graph in continuous motion so it settles and reacts to dragging/hovering. Off = static layout. |
-| `graphViewer.spacing`         | `100`   | Spacing between nodes (20–500). Higher spreads the graph out more. |
-| `graphViewer.animateOnHover`  | `true`  | Gently nudge and highlight a node's neighbors on hover (needs Physics for the motion). |
+| `graphViewer.physics`         | `true`  | Gentle Obsidian-style drift after the layout settles. Auto-disables on large graphs (see Motion Max Nodes). Off = fully static. |
+| `graphViewer.spacing`         | `150`   | Spacing between nodes (20–500). Higher spreads the graph out more. |
+| `graphViewer.animateOnHover`  | `true`  | On hover, dim the rest of the graph and enlarge + highlight the node and its neighbors. |
+| `graphViewer.motionMaxNodes`  | `800`   | Above this node count the gentle drift turns off so large graphs stay responsive. |
 
 Appearance settings apply live — no reload needed.
 

@@ -1,7 +1,7 @@
 import { Graph, GraphNode } from "../graph/types";
 import { edgeInLabel, edgeOutLabel, typeColor } from "../graph/labels";
 
-const CORE_KEYS = new Set(["id", "type", "label", "external"]);
+const CORE_KEYS = new Set(["id", "type", "label", "external", "childCount"]);
 
 /** Build the detail-panel HTML for one node: header, attributes, relationships. */
 export function renderDetail(graph: Graph, byId: Map<string, GraphNode>, id: string): string {
@@ -20,6 +20,15 @@ export function renderDetail(graph: Graph, byId: Map<string, GraphNode>, id: str
   }
   parts.push(`<div class="d-sub">${sub.join(" ")}</div>`);
   parts.push(`<div class="d-id" title="node id">${esc(node.id)}</div>`);
+
+  // Container-view rollup hint: how many nested nodes were collapsed into this one.
+  const childCount = typeof node.childCount === "number" ? node.childCount : 0;
+  if (childCount > 0) {
+    const word = childCount === 1 ? "member" : "members";
+    parts.push(
+      `<p class="muted" style="margin:0 0 10px">▣ ${childCount} nested ${word} rolled up — use “Show all” to expand.</p>`,
+    );
+  }
 
   // Attributes — everything beyond the core fields, generically rendered.
   const attrs: string[] = [];

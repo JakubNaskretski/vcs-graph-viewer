@@ -1,7 +1,10 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { Graph } from "./graph/types";
+import { isNestedType, rollupToContainers } from "./graph/rollup";
 import { GraphSource } from "./sources";
+
+const BIG_GRAPH = 2500; // above this many nodes, default to the container-level view
 
 /** Manages the single Graph Viewer webview panel and its data source. */
 export class GraphPanel {
@@ -14,7 +17,9 @@ export class GraphPanel {
   private watcher: vscode.FileSystemWatcher | undefined;
 
   private source: GraphSource | undefined;
-  private graph: Graph | undefined;
+  private fullGraph: Graph | undefined;
+  private rolledGraph: Graph | undefined; // cached container-level view
+  private viewMode: "auto" | "containers" | "all" = "auto";
   private webviewReady = false;
 
   static async createOrShow(context: vscode.ExtensionContext, source: GraphSource): Promise<void> {
@@ -86,6 +91,7 @@ export class GraphPanel {
   /** Point the panel at a new source: load, retitle, watch, and render. */
   async setSource(source: GraphSource): Promise<void> {
     this.source = source;
+    this.viewMode = "auto"; // a new graph picks its own default (size-based)
     this.panel.title = `Graph: ${source.label}`;
     this.setupWatcher(source);
     await this.reload();
@@ -95,7 +101,8 @@ export class GraphPanel {
   async reload(): Promise<void> {
     if (!this.source) return;
     try {
-      this.graph = await this.source.load();
+      this.fullGraph = await this.source.load();
+      this.rolledGraph = undefined;
       this.post();
     } catch (err) {
       void vscode.window.showErrorMessage(`Graph Viewer: ${(err as Error).message}`);
@@ -119,22 +126,56 @@ export class GraphPanel {
     this.disposables.push(this.watcher);
   }
 
-  private onMessage(msg: { type?: string }): void {
+  private onMessage(msg: { type?: string; mode?: "containers" | "all" }): void {
     if (msg?.type === "ready") {
       this.webviewReady = true;
       this.post();
+    } else if (msg?.type === "setViewMode") {
+      void this.setViewMode(msg.mode);
     }
   }
 
-  private post(): void {
-    if (this.webviewReady && this.graph && this.source) {
-      void this.panel.webview.postMessage({
-        type: "setGraph",
-        graph: this.graph,
-        label: this.source.label,
-        settings: this.readSettings(),
-      });
+  /** Switch between the container-level map and the full graph. Showing the full
+   *  graph on a large dataset is gated behind an explicit, modal confirmation. */
+  private async setViewMode(mode?: "containers" | "all"): Promise<void> {
+    if (!this.fullGraph || (mode !== "containers" && mode !== "all")) return;
+    if (mode === "all" && this.fullGraph.nodes.length > BIG_GRAPH) {
+      const choice = await vscode.window.showWarningMessage(
+        `This graph has ${this.fullGraph.nodes.length.toLocaleString()} nodes and ` +
+          `${this.fullGraph.edges.length.toLocaleString()} edges. Rendering everything at once ` +
+          `can be very slow or freeze the editor. Show all anyway?`,
+        { modal: true },
+        "Show all",
+      );
+      if (choice !== "Show all") return;
     }
+    this.viewMode = mode;
+    this.post();
+  }
+
+  private post(): void {
+    if (!this.webviewReady || !this.fullGraph || !this.source) return;
+    const total = this.fullGraph.nodes.length;
+    const mode = this.viewMode === "auto" ? (total > BIG_GRAPH ? "containers" : "all") : this.viewMode;
+    let graph = this.fullGraph;
+    if (mode === "containers") {
+      this.rolledGraph ??= rollupToContainers(this.fullGraph);
+      graph = this.rolledGraph;
+    }
+    void this.panel.webview.postMessage({
+      type: "setGraph",
+      graph,
+      label: this.source.label,
+      settings: this.readSettings(),
+      meta: {
+        mode,
+        totalNodes: total,
+        totalEdges: this.fullGraph.edges.length,
+        shownNodes: graph.nodes.length,
+        shownEdges: graph.edges.length,
+        hasNested: this.fullGraph.nodes.some((n) => isNestedType(n.type)),
+      },
+    });
   }
 
   private html(): string {
@@ -164,6 +205,7 @@ export class GraphPanel {
     <div id="toolbar">
       <input id="search" type="search" placeholder="Search nodes…" autocomplete="off" spellcheck="false" />
       <span id="status"></span>
+      <button id="mode" class="mode-btn" hidden></button>
       <span class="spacer"></span>
       <button id="relayout" title="Re-run layout">Re-layout</button>
       <button id="fit" title="Fit graph to view">Fit</button>
