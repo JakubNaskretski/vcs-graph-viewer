@@ -213,6 +213,107 @@ button:hover {
   font-size: 11px;
 }
 
+/* Expandable per-type node filter tree */
+.type-group {
+  margin: 1px 0;
+}
+
+.type-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.twisty {
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  color: var(--vscode-descriptionForeground);
+}
+
+.type-head .type-cb {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.type-name {
+  flex: 1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-members {
+  margin: 2px 0 6px 18px;
+}
+
+.member-search {
+  width: 100%;
+  padding: 2px 5px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  outline: none;
+}
+
+.member-search:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.member-actions {
+  font-size: 11px;
+  margin-bottom: 2px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.member-actions a {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+}
+
+.member-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+  font-size: 12px;
+}
+
+.member-row .member-cb {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.member-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.member-name:hover {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+
+.member-more {
+  font-size: 11px;
+  padding: 2px 0;
+}
+
 /* Graph canvas */
 #cy {
   grid-row: 2;

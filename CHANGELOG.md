@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+### Drill into a type and pick individual nodes
+
+- The **node-type filters are now an expandable tree**. Click a type (e.g. *Apex
+  class* or *Object*) to expand it into a searchable list of its own nodes — built
+  for types with thousands of members: the list renders a capped window and a
+  **per-type search** narrows it by name.
+- **Tick individual nodes** to choose exactly what shows, so you can isolate a few
+  classes/objects and see how they relate. Per-type **all / none** shortcuts make
+  "show none, then pick three" practical; the section-wide all/none still works.
+- Clicking a node's name in the list shows it and jumps the map to it.
+- Selecting/searching composes with everything else (type toggles, focus, the
+  container/full view).
+
 ## 0.3.0
 
 ### Focus a single node

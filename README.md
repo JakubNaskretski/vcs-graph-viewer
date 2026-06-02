@@ -16,7 +16,10 @@ click any node to read its attributes and relationships.
   module-level view instead of a frozen hairball. A **Show all** toggle in the
   toolbar expands to every node (behind a confirmation, since it can be heavy).
 - **Filters** — toggle node types and edge types on/off to focus the map; search
-  nodes by name. Work in either the container map or the full graph.
+  nodes by name. Work in either the container map or the full graph. Each **node
+  type expands** into a searchable list of its own nodes, so you can drill into,
+  say, *Apex class* and tick exactly which classes to show (with per-type all/none
+  and a name search built to handle thousands of members).
 - **Focus a single node** — click a node and hit **Focus on this node** (or type its
   name in the search box and press **Enter**) to narrow the map to just that node and
   its neighborhood. A depth control (1–3 hops) widens the ring; **clear** restores the

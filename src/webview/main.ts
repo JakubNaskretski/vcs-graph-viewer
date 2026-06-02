@@ -51,8 +51,10 @@ const focusClearEl = $<HTMLButtonElement>("#focus-clear");
 let cy: Core | undefined;
 let graph: Graph | undefined;
 let byId = new Map<string, GraphNode>();
-const enabledNodeTypes = new Set<string>();
+const enabledNodeTypes = new Set<string>(); // node types currently shown
 const enabledEdgeTypes = new Set<string>();
+const hiddenNodeIds = new Set<string>(); // individually unticked nodes (within shown types)
+let nodesByType = new Map<string, GraphNode[]>(); // type -> its nodes, for the expandable filter tree
 let selectedId: string | undefined;
 let settings: Settings = { physics: true, spacing: 150, animateOnHover: true, motionMaxNodes: 800 };
 let currentMeta: Meta | undefined;
@@ -417,22 +419,251 @@ document.addEventListener("visibilitychange", () => {
 
 // ---- filters ----
 function buildFilters(g: Graph): void {
-  const nodeCounts = countBy(g.nodes.map((n) => n.type));
   const edgeCounts = countBy(g.edges.map((e) => e.type));
+
+  // Group nodes by type (sorted by label) so each type can expand into a
+  // searchable, individually-selectable list of its own nodes.
+  nodesByType = new Map();
+  for (const n of g.nodes) {
+    const list = nodesByType.get(n.type);
+    if (list) list.push(n);
+    else nodesByType.set(n.type, [n]);
+  }
+  for (const list of nodesByType.values()) list.sort((a, b) => a.label.localeCompare(b.label));
 
   enabledNodeTypes.clear();
   enabledEdgeTypes.clear();
-  for (const t of nodeCounts.keys()) enabledNodeTypes.add(t);
+  hiddenNodeIds.clear();
+  for (const t of nodesByType.keys()) enabledNodeTypes.add(t);
   for (const t of edgeCounts.keys()) enabledEdgeTypes.add(t);
 
   nodeFiltersEl.innerHTML = "";
-  for (const [type, count] of sortedEntries(nodeCounts)) {
-    nodeFiltersEl.appendChild(filterRow(type, count, typeColor(type), enabledNodeTypes, type, applyFilters));
+  for (const type of [...nodesByType.keys()].sort((a, b) => a.localeCompare(b))) {
+    nodeFiltersEl.appendChild(typeGroup(type, nodesByType.get(type)!, typeColor(type)));
   }
   edgeFiltersEl.innerHTML = "";
   for (const [type, count] of sortedEntries(edgeCounts)) {
     edgeFiltersEl.appendChild(filterRow(type, count, undefined, enabledEdgeTypes, type, applyFilters));
   }
+}
+
+// Cap on member rows drawn per expanded type — keeps the DOM small even when a
+// type has tens of thousands of nodes; the per-type search narrows past it.
+const MEMBER_CAP = 250;
+
+// One expandable type group: header (twisty + on/off checkbox + name + count),
+// and a lazily-built, searchable, individually-checkable list of its nodes.
+function typeGroup(type: string, nodes: GraphNode[], color: string): HTMLElement {
+  const group = document.createElement("div");
+  group.className = "type-group";
+  group.dataset.type = type;
+
+  const head = document.createElement("div");
+  head.className = "type-head";
+
+  const twisty = document.createElement("span");
+  twisty.className = "twisty";
+  twisty.textContent = "▸";
+
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.className = "type-cb";
+  cb.checked = true;
+
+  const dot = document.createElement("span");
+  dot.className = "dot sm";
+  dot.style.background = color;
+
+  const name = document.createElement("span");
+  name.className = "type-name";
+  name.textContent = type;
+
+  const cnt = document.createElement("span");
+  cnt.className = "count";
+  cnt.textContent = String(nodes.length);
+
+  head.append(twisty, cb, dot, name, cnt);
+
+  const members = document.createElement("div");
+  members.className = "type-members";
+  members.hidden = true;
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "member-search";
+  search.placeholder = `search ${type} by name…`;
+  search.autocomplete = "off";
+
+  const actions = document.createElement("div");
+  actions.className = "member-actions";
+  const allLink = document.createElement("a");
+  allLink.textContent = "all";
+  const noneLink = document.createElement("a");
+  noneLink.textContent = "none";
+  const sep = document.createElement("span");
+  sep.textContent = " · ";
+  actions.append(allLink, sep, noneLink);
+
+  const list = document.createElement("div");
+  list.className = "member-list";
+  const more = document.createElement("div");
+  more.className = "member-more muted";
+
+  members.append(search, actions, list, more);
+  group.append(head, members);
+
+  const draw = () => renderMembers(type, list, more, color, search.value);
+
+  const toggleExpand = () => {
+    const opening = members.hidden;
+    members.hidden = !opening;
+    twisty.textContent = opening ? "▾" : "▸";
+    if (opening && list.childElementCount === 0) draw();
+  };
+  twisty.addEventListener("click", toggleExpand);
+  name.addEventListener("click", toggleExpand);
+
+  // Header checkbox toggles the whole type: if anything of it is visible, hide
+  // all; otherwise show all (works whether it was off or just all-hidden).
+  cb.addEventListener("change", () => {
+    const total = nodesByType.get(type)?.length ?? 0;
+    const anyVisible = enabledNodeTypes.has(type) && hiddenCountOfType(type) < total;
+    if (anyVisible) {
+      enabledNodeTypes.delete(type);
+    } else {
+      enabledNodeTypes.add(type);
+      unhideType(type);
+    }
+    if (!members.hidden) draw();
+    updateTypeCheckbox(type);
+    applyFilters();
+  });
+
+  // Per-type "all / none" — the practical way to then tick just a few.
+  allLink.addEventListener("click", () => {
+    enabledNodeTypes.add(type);
+    unhideType(type);
+    if (!members.hidden) draw();
+    updateTypeCheckbox(type);
+    applyFilters();
+  });
+  noneLink.addEventListener("click", () => {
+    for (const n of nodesByType.get(type) ?? []) hiddenNodeIds.add(n.id);
+    if (!members.hidden) draw();
+    updateTypeCheckbox(type);
+    applyFilters();
+  });
+
+  search.addEventListener("input", draw);
+  return group;
+}
+
+// Render (up to MEMBER_CAP of) a type's nodes matching the search term, each with
+// a visibility checkbox and a name you can click to jump to it on the map.
+function renderMembers(type: string, list: HTMLElement, more: HTMLElement, color: string, term: string): void {
+  const all = nodesByType.get(type) ?? [];
+  const t = term.trim().toLowerCase();
+  const matches = t ? all.filter((n) => n.label.toLowerCase().includes(t)) : all;
+  const shown = matches.slice(0, MEMBER_CAP);
+  const typeOn = enabledNodeTypes.has(type);
+
+  list.innerHTML = "";
+  for (const n of shown) {
+    const row = document.createElement("div");
+    row.className = "member-row";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "member-cb";
+    cb.checked = typeOn && !hiddenNodeIds.has(n.id);
+    cb.addEventListener("change", () => {
+      if (cb.checked) showMember(n, type);
+      else hiddenNodeIds.add(n.id);
+      updateTypeCheckbox(type);
+      applyFilters();
+    });
+
+    const dot = document.createElement("span");
+    dot.className = "dot sm";
+    dot.style.background = color;
+
+    const label = document.createElement("span");
+    label.className = "member-name";
+    label.textContent = n.label;
+    label.title = `${n.id} — click to show & jump to it`;
+    label.addEventListener("click", () => {
+      if (!cb.checked) {
+        cb.checked = true;
+        showMember(n, type);
+        updateTypeCheckbox(type);
+        applyFilters();
+      }
+      focusNode(n.id); // centre + select (does not isolate)
+    });
+
+    row.append(cb, dot, label);
+    list.appendChild(row);
+  }
+
+  more.textContent =
+    matches.length === 0
+      ? "no matches"
+      : matches.length > MEMBER_CAP
+        ? `showing ${MEMBER_CAP} of ${matches.length.toLocaleString()} — refine the search`
+        : "";
+}
+
+function unhideType(type: string): void {
+  for (const id of [...hiddenNodeIds]) if (byId.get(id)?.type === type) hiddenNodeIds.delete(id);
+}
+
+// Reflect a type's aggregate state on its header checkbox: checked = all shown,
+// indeterminate = some hidden, unchecked = type off.
+function updateTypeCheckbox(type: string): void {
+  const cb = nodeFiltersEl.querySelector<HTMLInputElement>(
+    `.type-group[data-type="${cssAttr(type)}"] .type-cb`,
+  );
+  if (!cb) return;
+  const enabled = enabledNodeTypes.has(type);
+  const hidden = hiddenCountOfType(type);
+  const total = nodesByType.get(type)?.length ?? 0;
+  cb.checked = enabled && hidden === 0;
+  cb.indeterminate = enabled && hidden > 0 && hidden < total;
+}
+
+function hiddenCountOfType(type: string): number {
+  let c = 0;
+  for (const id of hiddenNodeIds) if (byId.get(id)?.type === type) c++;
+  return c;
+}
+
+// Make a single node visible. If its type was entirely off, switch that type into
+// "only-selected" mode (hide all its nodes) so this one shows on its own.
+function showMember(n: GraphNode, type: string): void {
+  if (!enabledNodeTypes.has(type)) {
+    enabledNodeTypes.add(type);
+    for (const m of nodesByType.get(type) ?? []) hiddenNodeIds.add(m.id);
+  }
+  hiddenNodeIds.delete(n.id);
+}
+
+function refreshNodeGroups(): void {
+  nodeFiltersEl.querySelectorAll<HTMLElement>(".type-group").forEach((group) => {
+    const type = group.dataset.type;
+    if (!type) return;
+    updateTypeCheckbox(type);
+    const members = group.querySelector<HTMLElement>(".type-members");
+    if (members && !members.hidden) {
+      const list = group.querySelector<HTMLElement>(".member-list")!;
+      const more = group.querySelector<HTMLElement>(".member-more")!;
+      const search = group.querySelector<HTMLInputElement>(".member-search")!;
+      renderMembers(type, list, more, typeColor(type), search.value);
+    }
+  });
+}
+
+function cssAttr(s: string): string {
+  return s.replace(/["\\]/g, "\\$&");
 }
 
 function filterRow(
@@ -477,7 +708,10 @@ function applyFilters(): void {
   cy.batch(() => {
     const visible = new Set<string>();
     cy!.nodes().forEach((n) => {
-      const show = enabledNodeTypes.has(n.data("type")) && (!focusSet || focusSet.has(n.id()));
+      const show =
+        enabledNodeTypes.has(n.data("type")) &&
+        !hiddenNodeIds.has(n.id()) &&
+        (!focusSet || focusSet.has(n.id()));
       if (show) visible.add(n.id());
       n.style("display", show ? "element" : "none");
     });
@@ -500,7 +734,7 @@ function focusVisibleIds(): Set<string> | undefined {
   if (!focusId || !graph) return undefined;
   const nodeOk = (id: string): boolean => {
     const n = byId.get(id);
-    return !!n && enabledNodeTypes.has(n.type);
+    return !!n && enabledNodeTypes.has(n.type) && !hiddenNodeIds.has(id);
   };
   if (!nodeOk(focusId)) return undefined;
 
@@ -586,8 +820,9 @@ document.querySelectorAll<HTMLElement>("[data-all]").forEach((el) => {
     const edgeOn = action === "edge-on";
     if (nodeOn || nodeOff) {
       enabledNodeTypes.clear();
-      if (nodeOn && graph) graph.nodes.forEach((n) => enabledNodeTypes.add(n.type));
-      syncChecks(nodeFiltersEl, nodeOn);
+      hiddenNodeIds.clear();
+      if (nodeOn) for (const t of nodesByType.keys()) enabledNodeTypes.add(t);
+      refreshNodeGroups();
     } else if (graph) {
       enabledEdgeTypes.clear();
       if (edgeOn) graph.edges.forEach((e) => enabledEdgeTypes.add(e.type));
