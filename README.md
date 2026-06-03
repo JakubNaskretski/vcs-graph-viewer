@@ -100,4 +100,4 @@ tree-sitter backend.)
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://opensource.org/licenses/MIT) — see the bundled `LICENSE` file.

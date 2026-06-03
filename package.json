@@ -5,10 +5,6 @@
   "version": "0.5.0",
   "publisher": "Skrety",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/JakubNaskretski/vcs-grap-viewer.git"
-  },
   "engines": {
     "vscode": "^1.85.0"
   },
