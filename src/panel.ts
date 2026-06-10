@@ -81,7 +81,7 @@ export class GraphPanel {
     const c = vscode.workspace.getConfiguration("graphViewer");
     return {
       physics: c.get<boolean>("physics", true),
-      spacing: c.get<number>("spacing", 150),
+      spacing: c.get<number>("spacing", 220),
       animateOnHover: c.get<boolean>("animateOnHover", true),
       motionMaxNodes: c.get<number>("motionMaxNodes", 800),
     };

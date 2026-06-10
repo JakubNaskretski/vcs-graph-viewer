@@ -2,7 +2,7 @@
   "name": "vcs-grap-viewer",
   "displayName": "Graph Viewer",
   "description": "Visualize and explore a metadata graph (nodes + edges) as an interactive, filterable map — an Obsidian-style graph view inside your editor.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "publisher": "Skrety",
   "license": "MIT",
   "engines": {
@@ -161,10 +161,10 @@
         },
         "graphViewer.spacing": {
           "type": "number",
-          "default": 150,
+          "default": 220,
           "minimum": 20,
           "maximum": 500,
-          "description": "Spacing between nodes. Higher values spread the graph out more."
+          "description": "Spacing between nodes. Higher values spread the graph out more — applied between every pair of neighboring nodes, not only connected ones."
         },
         "graphViewer.animateOnHover": {
           "type": "boolean",

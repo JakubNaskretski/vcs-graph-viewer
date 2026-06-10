@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.2
+
+### Readable maps: real node spacing and smarter labels
+
+- **Every node now gets breathing room.** The layout reserves space for each
+  node including its label, with a hard minimum separation between neighbors —
+  unrelated nodes sitting next to each other can no longer overlap each other's
+  text. The **Spacing** setting default is higher (220) and now applies between
+  all neighboring nodes, not just connected ones.
+- **Labels appear only when they're readable.** Zoomed out, the map shows
+  shapes and colors; names fade in as you zoom, at a larger font with an
+  outline that stays legible over edges. Hovering or selecting a node always
+  shows its name (and its neighbors') at any zoom level.
+- Sharper text while zooming, and a higher-quality force layout on the default
+  (capped) view.
+
 ## 0.5.1
 
 ### Faster builds, safer big-graph rendering, managed-package coverage

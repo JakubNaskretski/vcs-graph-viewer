@@ -75,7 +75,7 @@ const enabledEdgeTypes = new Set<string>();
 const hiddenNodeIds = new Set<string>(); // individually unticked nodes (within shown types)
 let nodesByType = new Map<string, GraphNode[]>(); // type -> its nodes, for the expandable filter tree
 let selectedId: string | undefined;
-let settings: Settings = { physics: true, spacing: 150, animateOnHover: true, motionMaxNodes: 800 };
+let settings: Settings = { physics: true, spacing: 220, animateOnHover: true, motionMaxNodes: 800 };
 let currentMeta: Meta | undefined;
 let expandedIds = new Set<string>(); // containers drilled into (mirrors host state)
 // Focus: when set, the map is narrowed to this node and its k-hop neighborhood.
@@ -187,7 +187,9 @@ function build(g: Graph): void {
     container: cyEl,
     elements,
     wheelSensitivity: 0.2,
-    textureOnViewport: true, // faster pan/zoom on big graphs
+    // Texture rendering keeps pan/zoom fast but blurs text mid-gesture — only
+    // worth it past the render cap (the confirmed "Show all" path).
+    textureOnViewport: bigRender,
     hideEdgesOnViewport: bigRender, // don't redraw every edge mid pan/zoom
     style: buildStyle(maxDeg, bigRender),
   });
@@ -291,9 +293,10 @@ function stopDrift(): void {
 }
 
 function fcoseOptions(spacing: number, count: number): cytoscape.LayoutOptions {
-  // "draft" skips the expensive force-iteration refinement — essential to keep a
-  // multi-thousand-node container map from locking up during layout.
-  const big = count > 1200;
+  // "draft" skips the expensive force-iteration refinement. The render cap keeps
+  // the default view at ~1,500 nodes, which "default" quality handles fine — only
+  // the confirmed "Show all" path (past the cap) drops to draft.
+  const big = count > 2600;
   return {
     name: "fcose",
     quality: big ? "draft" : "default",
@@ -302,10 +305,17 @@ function fcoseOptions(spacing: number, count: number): cytoscape.LayoutOptions {
     fit: true,
     padding: 40,
     samplingType: true,
-    nodeRepulsion: 4500 + spacing * 30,
+    // Reserve room for each node INCLUDING its label box, so spacing exists
+    // between every neighboring node — not just along edges.
+    nodeDimensionsIncludeLabels: true,
+    nodeRepulsion: 9000 + spacing * 60,
     idealEdgeLength: spacing,
-    nodeSeparation: Math.max(20, spacing * 0.85),
+    nodeSeparation: Math.max(60, spacing * 1.2),
     packComponents: true,
+    // Disconnected nodes are tiled into a grid; pad that grid too.
+    tile: true,
+    tilingPaddingVertical: Math.max(24, Math.round(spacing / 4)),
+    tilingPaddingHorizontal: Math.max(24, Math.round(spacing / 4)),
   } as unknown as cytoscape.LayoutOptions;
 }
 
@@ -318,14 +328,19 @@ function buildStyle(maxDeg: number, bigRender = false): cytoscape.StylesheetStyl
         label: "data(label)",
         width: `mapData(deg, 0, ${maxDeg}, 14, 52)`,
         height: `mapData(deg, 0, ${maxDeg}, 14, 52)`,
-        "font-size": 7,
-        color: "#c8c8c8",
+        "font-size": 10,
+        color: "#e6e6e6",
+        // Outline keeps text legible when it crosses edges or other nodes.
+        "text-outline-width": 2,
+        "text-outline-color": "#1b1b1b",
+        "text-outline-opacity": 0.85,
         "text-valign": "bottom",
         "text-halign": "center",
-        "text-margin-y": 2,
-        // On big maps only draw labels once zoomed in fairly close — labelling
-        // thousands of nodes at once is a major render cost.
-        "min-zoomed-font-size": bigRender ? 14 : 8,
+        "text-margin-y": 3,
+        // Labels are culled whenever they'd render below a readable on-screen
+        // size — zoomed out you see shapes/colors only, and text appears as you
+        // zoom in. Hovered/selected nodes override this (see classes below).
+        "min-zoomed-font-size": bigRender ? 14 : 11,
         "border-width": 0,
         "transition-property": "width height border-width border-color background-blacken opacity",
         "transition-duration": 130,
@@ -359,10 +374,26 @@ function buildStyle(maxDeg: number, bigRender = false): cytoscape.StylesheetStyl
         "border-opacity": 1,
         "background-blacken": -0.2,
         "z-index": 20,
-      },
+        // The node you're pointing at (and its neighbors / selection, below)
+        // always shows its name, however far out you're zoomed.
+        "min-zoomed-font-size": 0,
+        "font-size": 12,
+      } as cytoscape.Css.Node,
     },
-    { selector: "node.sel", style: { "border-width": 3, "border-color": accent, "border-style": "solid", "border-opacity": 1 } },
-    { selector: "node.hl", style: { "border-width": 2, "border-color": accent, "border-style": "solid", "border-opacity": 1 } },
+    {
+      selector: "node.sel",
+      style: {
+        "border-width": 3, "border-color": accent, "border-style": "solid", "border-opacity": 1,
+        "min-zoomed-font-size": 0, "font-size": 12, "z-index": 21,
+      } as cytoscape.Css.Node,
+    },
+    {
+      selector: "node.hl",
+      style: {
+        "border-width": 2, "border-color": accent, "border-style": "solid", "border-opacity": 1,
+        "min-zoomed-font-size": 0, "z-index": 19,
+      } as cytoscape.Css.Node,
+    },
     { selector: "edge.hl", style: { "line-color": accent, "target-arrow-color": accent, "line-opacity": 1, width: 2, "z-index": 9 } },
     { selector: ".dim", style: { opacity: 0.12 } },
     { selector: ".unfocused", style: { opacity: 0.12 } },
