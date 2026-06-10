@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+### A new rendering engine for much larger graphs
+
+- **The map now renders on the GPU (WebGL).** Graphs that used to slow down or
+  freeze the editor — tens of thousands of nodes — now open and pan smoothly,
+  drawn on the graphics card instead of the CPU canvas.
+- **Everything you already use works the same.** Hover to highlight a node and its
+  neighbors, click to select and see its details and connections, the **Layout**
+  toggle (force-directed ⟷ grouped islands), type/edge **filters**, **search**,
+  and drilling into a container to reveal its members are all unchanged.
+- **Labels and colors as before.** Nodes stay sized by connectivity and colored by
+  type; names fade in as you zoom and always show for the hovered or selected node.
+
 ## 0.5.4
 
 ### Group the map by type, and a roomier default layout
