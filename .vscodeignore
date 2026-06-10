@@ -12,3 +12,6 @@ esbuild.js
 tsconfig.json
 **/*.map
 **/*.ts
+*.vsix
+**/*.tar.gz
+sigma-migration/**
