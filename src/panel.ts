@@ -235,7 +235,9 @@ export class GraphPanel {
         100,
         vscode.workspace.getConfiguration("graphViewer").get<number>("maxRenderNodes", 1500),
       );
-      const sliced = topConnectedSlice(graph, cap);
+      // Edge budget rides the node cap: the top-connected slice is the densest
+      // part of the graph, and edges (not nodes) are what freeze the layout.
+      const sliced = topConnectedSlice(graph, cap, cap * 4);
       graph = sliced.graph;
       capDropped = sliced.dropped;
     }

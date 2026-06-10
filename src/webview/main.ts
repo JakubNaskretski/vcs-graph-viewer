@@ -180,7 +180,9 @@ function build(g: Graph): void {
     elements.push({ data: { id: `e${i}`, source: e.src, target: e.dst, type: e.type } });
   });
 
-  const bigRender = g.nodes.length > 1500;
+  // Edges, not nodes, are what make rendering heavy — the capped view is the
+  // densest slice of the graph, so both counts gate the cheap-render paths.
+  const bigRender = g.nodes.length > 1500 || g.edges.length > 8000;
   stopDrift();
   cy?.destroy();
   cy = cytoscape({
@@ -217,8 +219,7 @@ function build(g: Graph): void {
 function runLayout(): void {
   if (!cy) return;
   stopDrift();
-  const count = cy.nodes().length;
-  const layout = cy.layout(fcoseOptions(settings.spacing, count));
+  const layout = cy.layout(fcoseOptions(settings.spacing, cy.nodes().length, cy.edges().length));
   layout.one("layoutstop", () => {
     // Defer one frame so the container has its real size, then land zoomed-in
     // centered on the most-connected node (the natural focal point, and the
@@ -292,22 +293,23 @@ function stopDrift(): void {
   driftRAF = undefined;
 }
 
-function fcoseOptions(spacing: number, count: number): cytoscape.LayoutOptions {
-  // "draft" skips the expensive force-iteration refinement. The render cap keeps
-  // the default view at ~1,500 nodes, which "default" quality handles fine — only
-  // the confirmed "Show all" path (past the cap) drops to draft.
-  const big = count > 2600;
+function fcoseOptions(spacing: number, nodes: number, edges: number): cytoscape.LayoutOptions {
+  // "draft" skips the expensive force-iteration refinement. Cost scales with
+  // EDGES as much as nodes (the capped view is the densest slice of the graph),
+  // so both gate the quality — full quality froze the editor on dense slices.
+  const heavy = nodes > 1200 || edges > 6000;
   return {
     name: "fcose",
-    quality: big ? "draft" : "default",
-    animate: count <= 200,
+    quality: heavy ? "draft" : "default",
+    animate: nodes <= 200,
     randomize: true,
     fit: true,
     padding: 40,
     samplingType: true,
     // Reserve room for each node INCLUDING its label box, so spacing exists
-    // between every neighboring node — not just along edges.
-    nodeDimensionsIncludeLabels: true,
+    // between every neighboring node — but measuring every label is itself
+    // expensive, so only on comfortably small maps.
+    nodeDimensionsIncludeLabels: nodes <= 800 && edges <= 4000,
     nodeRepulsion: 9000 + spacing * 60,
     idealEdgeLength: spacing,
     nodeSeparation: Math.max(60, spacing * 1.2),

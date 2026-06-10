@@ -109,11 +109,18 @@ function toDisk(graph: Graph) {
 export class GraphLibraryProvider implements vscode.TreeDataProvider<GraphEntry> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly library: GraphLibrary) {}
 
+  /** Coalesce refresh bursts into one change event — rapid back-to-back fires
+   *  can make VS Code stack duplicate copies of the empty-state welcome view. */
   refresh(): void {
-    this._onDidChangeTreeData.fire();
+    if (this.refreshTimer) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      this._onDidChangeTreeData.fire();
+    }, 50);
   }
 
   getTreeItem(entry: GraphEntry): vscode.TreeItem {

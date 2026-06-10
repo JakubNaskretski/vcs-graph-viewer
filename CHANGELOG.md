@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.3
+
+### Fix: freeze on opening dense graphs
+
+- **Opening a graph with a densely interconnected core no longer freezes the
+  editor.** The default view now bounds how many *edges* it draws, not just
+  nodes — the most-connected slice of a big org graph is also its densest, and
+  edge volume is what makes layout expensive. Layout quality and label-aware
+  spacing now adapt to edge count as well.
+- The empty-library welcome message no longer shows duplicated copies after
+  rapid refreshes.
+
 ## 0.5.2
 
 ### Readable maps: real node spacing and smarter labels
