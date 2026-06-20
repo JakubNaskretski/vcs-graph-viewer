@@ -16,7 +16,7 @@ const PATH_KEY = "graphPath";
  * Order: an explicit `uri` (e.g. from the explorer context menu) wins; otherwise
  * the configured `graphViewer.graphPath`; otherwise we prompt for a file. When
  * `forcePick` is set we always prompt. A freshly picked file is remembered in the
- * configuration so the next "Open Graph Viewer" is one click.
+ * configuration so the next "Open Graph Explorer" is one click.
  *
  * This is the single place that maps user intent to a source — when the step-2
  * builder lands, the "build from a Salesforce folder" choice is added here.

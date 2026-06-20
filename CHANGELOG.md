@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 ### Real Apex parsing, and pick what goes into the graph
 

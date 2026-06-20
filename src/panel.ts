@@ -7,7 +7,7 @@ import { GraphSource } from "./sources";
 
 const BIG_GRAPH = 2500; // above this many nodes, default to the container-level view
 
-/** Manages the single Graph Viewer webview panel and its data source. */
+/** Manages the single Graph Explorer webview panel and its data source. */
 export class GraphPanel {
   public static current: GraphPanel | undefined;
   private static readonly viewType = "graphViewer.view";
@@ -35,7 +35,7 @@ export class GraphPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       GraphPanel.viewType,
-      "Graph Viewer",
+      "Graph Explorer",
       column,
       {
         enableScripts: true,
@@ -111,7 +111,7 @@ export class GraphPanel {
       this.explore.clear(); // ids may have changed; start from the overview
       this.post();
     } catch (err) {
-      void vscode.window.showErrorMessage(`Graph Viewer: ${(err as Error).message}`);
+      void vscode.window.showErrorMessage(`Graph Explorer: ${(err as Error).message}`);
     }
   }
 
@@ -306,7 +306,7 @@ export class GraphPanel {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>Graph Viewer</title>
+  <title>Graph Explorer</title>
 </head>
 <body>
   <div id="app">

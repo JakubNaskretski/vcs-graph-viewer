@@ -1,8 +1,8 @@
 {
   "name": "vcs-graph-viewer",
-  "displayName": "Graph Viewer",
+  "displayName": "Graph Explorer",
   "description": "Visualize and explore a metadata graph (nodes + edges) as an interactive, filterable map — an Obsidian-style graph view inside your editor.",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "publisher": "Skrety",
   "icon": "plugin-icon.png",
   "license": "MIT",
@@ -25,47 +25,47 @@
     "commands": [
       {
         "command": "graphViewer.open",
-        "title": "Open Graph Viewer",
-        "category": "Graph Viewer"
+        "title": "Open Graph Explorer",
+        "category": "Graph Explorer"
       },
       {
         "command": "graphViewer.selectFile",
         "title": "Select Graph File…",
-        "category": "Graph Viewer"
+        "category": "Graph Explorer"
       },
       {
         "command": "graphViewer.reload",
         "title": "Reload Graph",
-        "category": "Graph Viewer"
+        "category": "Graph Explorer"
       },
       {
         "command": "graphViewer.generate",
         "title": "Generate Graph from Folder…",
-        "category": "Graph Viewer",
+        "category": "Graph Explorer",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "graphViewer.import",
         "title": "Import graph.json into Library",
-        "category": "Graph Viewer",
+        "category": "Graph Explorer",
         "icon": "$(add)"
       },
       {
         "command": "graphViewer.openStored",
         "title": "Open Graph",
-        "category": "Graph Viewer",
+        "category": "Graph Explorer",
         "icon": "$(open-preview)"
       },
       {
         "command": "graphViewer.deleteStored",
         "title": "Delete Graph",
-        "category": "Graph Viewer",
+        "category": "Graph Explorer",
         "icon": "$(trash)"
       },
       {
         "command": "graphViewer.refreshLibrary",
         "title": "Refresh Library",
-        "category": "Graph Viewer",
+        "category": "Graph Explorer",
         "icon": "$(refresh)"
       }
     ],
@@ -73,7 +73,7 @@
       "activitybar": [
         {
           "id": "graphViewer",
-          "title": "Graph Viewer",
+          "title": "Graph Explorer",
           "icon": "media/graph-icon.svg"
         }
       ]
@@ -83,7 +83,7 @@
         {
           "id": "graphViewer.library",
           "name": "Graphs",
-          "contextualTitle": "Graph Viewer",
+          "contextualTitle": "Graph Explorer",
           "icon": "media/graph-icon.svg"
         }
       ]
@@ -143,7 +143,7 @@
       ]
     },
     "configuration": {
-      "title": "Graph Viewer",
+      "title": "Graph Explorer",
       "properties": {
         "graphViewer.graphPath": {
           "type": "string",

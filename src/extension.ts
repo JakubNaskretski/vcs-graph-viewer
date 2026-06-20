@@ -10,7 +10,7 @@ import { FileGraphSource, resolveGraphSource } from "./sources";
 export function activate(context: vscode.ExtensionContext): void {
   const library = new GraphLibrary(context);
   const libraryView = new GraphLibraryProvider(library);
-  const log = vscode.window.createOutputChannel("Graph Viewer");
+  const log = vscode.window.createOutputChannel("Graph Explorer");
   context.subscriptions.push(log);
 
   context.subscriptions.push(
@@ -54,7 +54,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         if (choice === "Open") await openStored(context, library, entry);
       } catch (err) {
-        void vscode.window.showErrorMessage(`Graph Viewer: import failed — ${(err as Error).message}`);
+        void vscode.window.showErrorMessage(`Graph Explorer: import failed — ${(err as Error).message}`);
       }
     }),
 
@@ -120,7 +120,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         if (choice === "Open") await openStored(context, library, entry);
       } catch (err) {
-        void vscode.window.showErrorMessage(`Graph Viewer: build failed — ${(err as Error).message}`);
+        void vscode.window.showErrorMessage(`Graph Explorer: build failed — ${(err as Error).message}`);
       }
     }),
 
@@ -223,7 +223,7 @@ async function pickSourceTypes(context: vscode.ExtensionContext): Promise<string
   });
   if (!chosen) return undefined; // cancelled
   if (chosen.length === 0) {
-    void vscode.window.showWarningMessage("Graph Viewer: select at least one source type to build.");
+    void vscode.window.showWarningMessage("Graph Explorer: select at least one source type to build.");
     return undefined;
   }
   const keys = chosen.map((c) => c.key);

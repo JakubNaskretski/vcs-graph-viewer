@@ -1,4 +1,4 @@
-# Graph Viewer
+# Graph Explorer
 
 An Obsidian-style **graph view inside your editor**. Point it at a `graph.json`
 metadata graph (nodes + edges) and explore it as an interactive, filterable map —
@@ -49,7 +49,7 @@ Two ways:
    `force-app` into the graph and stores it in your library.
 2. **Import an existing `graph.json`** produced by **graph-builder**
    (`python -m graphbuilder path/to/source -o graph.json`) via the **Graphs** view
-   → **Import**, or open one ad-hoc with **Graph Viewer: Open**.
+   → **Import**, or open one ad-hoc with **Graph Explorer: Open**.
 
 The graph is plain JSON; any tool that emits the same shape works:
 
@@ -64,7 +64,7 @@ The graph is plain JSON; any tool that emits the same shape works:
 
 - **Graphs view** (Activity Bar) → **Generate from folder…** to build one, or
   **Import** an existing `graph.json`. Click a graph in the list to open the map.
-- Or **Graph Viewer: Open** from the Command Palette to open a `graph.json`
+- Or **Graph Explorer: Open** from the Command Palette to open a `graph.json`
   ad-hoc (its path is remembered in `graphViewer.graphPath`). The view reloads
   automatically when that file changes (`graphViewer.reloadOnChange`).
 
