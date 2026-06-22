@@ -979,7 +979,9 @@ detailEl.addEventListener("click", (e) => {
       }
       return;
     }
-    if (kind === "depth") focusState.depth = Math.max(0, focusState.depth + Number(focusBtn.dataset.dir));
+    // Floor at 1: depth 0 would scope to the node alone and dim all its own edges
+    // (a focused node with no visible connections — useless). 1 = node + direct links.
+    if (kind === "depth") focusState.depth = Math.max(1, focusState.depth + Number(focusBtn.dataset.dir));
     else if (kind === "dir") focusState.direction = focusBtn.dataset.dir as "out" | "in" | "both";
     // hide mode re-culls host-side; fade mode re-scopes locally (select re-renders detail).
     if (focusState.mode === "hide") postFocus();

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+- **Focus: the minimum depth is now 1, so a focused node always shows its direct
+  connections.** Previously the depth control could go to 0, which scoped to the node
+  alone and dimmed all of its own links — making it look like the connections vanished.
+
 ## 0.8.0
 
 ### Focus mode — explore huge graphs one node at a time

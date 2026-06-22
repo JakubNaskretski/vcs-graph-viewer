@@ -108,7 +108,7 @@ function renderExplore(ctx?: DetailCtx): string {
 function renderFocus(ctx?: DetailCtx): string {
   if (!ctx?.focus) return "";
   const { depth, direction, mode } = ctx.focus;
-  const minus = `<button class="x-step" data-focus="depth" data-dir="-1"${depth <= 0 ? " disabled" : ""} title="Fewer hops">−</button>`;
+  const minus = `<button class="x-step" data-focus="depth" data-dir="-1"${depth <= 1 ? " disabled" : ""} title="Fewer hops">−</button>`;
   const plus = `<button class="x-step" data-focus="depth" data-dir="1" title="More hops">＋</button>`;
   const dir = (d: "out" | "in" | "both") =>
     `<button class="x-toggle${direction === d ? " on" : ""}" data-focus="dir" data-dir="${d}" title="${d === "out" ? "What this calls/uses" : d === "in" ? "What calls/uses this" : "Both directions"}">${d}</button>`;
