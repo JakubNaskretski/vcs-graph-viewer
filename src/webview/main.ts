@@ -28,6 +28,9 @@ interface Settings {
   spacing: number;
   animateOnHover: boolean;
   motionMaxNodes: number;
+  /** How many related mains each neighbour/source "＋" step reveals
+   *  (graphViewer.maxRelatedNodes). */
+  relatedStep: number;
 }
 
 // Sent by the host alongside each graph: which view we're in (container-level vs
@@ -39,6 +42,8 @@ interface Meta {
   shownNodes: number;
   shownEdges: number;
   hasNested: boolean;
+  // True when the full graph exceeds the render cap (a capped view would differ).
+  capAvailable: boolean;
   // Explore state: which nodes have reveals active, the count, and (for the node
   // just acted on) what's available to reveal + its current reveal state.
   exploring: boolean;
@@ -50,6 +55,9 @@ interface Meta {
   // Present in flat-view hide-focus: the rendered K-hop neighborhood's root + size,
   // so the focus pill can show "+N beyond cap".
   focusInfo?: { root: string; depth: number; direction: string; total: number; shown: number };
+  // Build/load diagnostics: counts + a capped, readable sample of unresolved
+  // references and extract errors, for the collapsible Diagnostics panel.
+  diagnostics?: { unresolved: number; errors: number; unresolvedSample: string[]; errorSample: string[] };
 }
 
 const accent =
@@ -81,6 +89,10 @@ const exploreBarEl = $<HTMLSpanElement>("#explore-bar");
 const exploreCountEl = $<HTMLSpanElement>("#explore-count");
 const exploreResetEl = $<HTMLButtonElement>("#explore-reset");
 const layoutModeEl = $<HTMLButtonElement>("#layout-mode");
+const diagnosticsBtnEl = $<HTMLButtonElement>("#diagnostics-btn");
+const diagnosticsEl = $<HTMLElement>("#diagnostics");
+const diagnosticsBodyEl = $<HTMLElement>("#diagnostics-body");
+const diagnosticsCloseEl = $<HTMLButtonElement>("#diagnostics-close");
 
 // Overlay for grouped-mode island halos + type labels. sigma has no native group
 // hulls, so we draw them as HTML over the canvas and keep them aligned with the
@@ -123,13 +135,15 @@ const enabledEdgeTypes = new Set<string>();
 const hiddenNodeIds = new Set<string>(); // individually unticked nodes (within shown types)
 let nodesByType = new Map<string, GraphNode[]>(); // type -> its nodes, for the expandable filter tree
 let selectedId: string | undefined;
-let settings: Settings = { physics: true, spacing: 220, animateOnHover: true, motionMaxNodes: 800 };
+let settings: Settings = { physics: true, spacing: 220, animateOnHover: true, motionMaxNodes: 800, relatedStep: 10 };
 let currentMeta: Meta | undefined;
 // What's available to reveal around the selected node + its current reveal state,
 // from the host's `describe`/`rootInfo`. Drives the detail-panel Explore block.
 let selectedInfo: { id: string; totals: ExploreTotals; spec: ExploreSpec } | undefined;
-// How many nodes each Explore "＋" step reveals (and "−" hides).
-const EXPLORE_STEP = 8;
+// How many mains each neighbour/source Explore "＋" step reveals (and "−" hides).
+// Driven by graphViewer.maxRelatedNodes (settings.relatedStep); read live so a
+// settings change takes effect on the next step.
+const exploreStepSize = (): number => Math.max(1, settings.relatedStep);
 
 // ---- per-frame render state (read by the reducers; mutate then refresh()) ----
 // Visibility is the single source of truth that used to be cytoscape's display
@@ -207,6 +221,7 @@ window.addEventListener("message", (event) => {
     updateModeUI();
     updateExploreUI();
     updateFocusUI();
+    updateDiagnosticsUI();
     // Keep the just-acted node selected so its detail (and Explore block) stays open;
     // adopt the host's echoed reveal info so the block shows the new counts.
     if (m.expandRoot && byId.has(m.expandRoot)) {
@@ -239,18 +254,37 @@ modeEl.addEventListener("click", () => {
 function updateModeUI(): void {
   // While drilling in, the container/full toggle doesn't apply — the explore
   // pill (with its reset) is the way out.
-  if (!currentMeta || !currentMeta.hasNested || currentMeta.exploring) {
+  if (!currentMeta || currentMeta.exploring) {
+    modeEl.hidden = true;
+    return;
+  }
+  // A graph WITH nested types has a real container/full distinction, so the toggle
+  // always applies. A GENERIC graph (no nested types) has no container view, but when
+  // it's big enough to be render-capped the user must still be able to reach the whole
+  // thing (and get back). For generic graphs the toggle only makes sense when a capped
+  // view would actually differ from the full one (capAvailable).
+  const genericToggle = !currentMeta.hasNested && currentMeta.capAvailable;
+  const showToggle = currentMeta.hasNested || genericToggle;
+  if (!showToggle) {
     modeEl.hidden = true;
     return;
   }
   modeEl.hidden = false;
   if (currentMeta.mode === "containers") {
     modeEl.textContent = `Show all (${currentMeta.totalNodes.toLocaleString()})`;
-    modeEl.title = "Show every node, including fields/methods/elements (may be slow on large graphs)";
+    modeEl.title = currentMeta.hasNested
+      ? "Show every node, including fields/methods/elements (may be slow on large graphs)"
+      : "Show every node without the render cap (may be slow on large graphs)";
     modeEl.dataset.target = "all";
-  } else {
+  } else if (currentMeta.hasNested) {
     modeEl.textContent = "Collapse to containers";
     modeEl.title = "Roll fields/methods/elements up into their parent objects/classes/flows";
+    modeEl.dataset.target = "containers";
+  } else {
+    // Generic graph in the uncapped "all" view: no container view to collapse to, but
+    // give a way back to the responsive capped default.
+    modeEl.textContent = "Show capped view";
+    modeEl.title = "Return to the most-connected subset that renders quickly";
     modeEl.dataset.target = "containers";
   }
 }
@@ -1029,14 +1063,14 @@ detailEl.addEventListener("click", (e) => {
     vscodeApi.postMessage({ type: "exploreStep", id: selectedId, kind: toggle.dataset.kind, value: toggle.dataset.val === "1" });
     return;
   }
-  // Neighbour / source stepper: reveal EXPLORE_STEP more (or fewer) around selection.
+  // Neighbour / source stepper: reveal relatedStep more (or fewer) around selection.
   const step = target.closest(".x-step") as HTMLElement | null;
   if (step?.dataset.kind && step.dataset.dir && selectedId && selectedInfo) {
     e.preventDefault();
     const kind = step.dataset.kind as "neighbors" | "sources";
     const total = selectedInfo.totals[kind];
     const shown = Math.min(selectedInfo.spec[kind], total);
-    const next = Math.max(0, Math.min(total, shown + Number(step.dataset.dir) * EXPLORE_STEP));
+    const next = Math.max(0, Math.min(total, shown + Number(step.dataset.dir) * exploreStepSize()));
     if (next !== shown) vscodeApi.postMessage({ type: "exploreStep", id: selectedId, kind, value: next });
     return;
   }
@@ -1375,6 +1409,62 @@ function updateExploreUI(): void {
     const n = currentMeta?.expandedCount ?? 0;
     exploreCountEl.textContent = n === 1 ? "1 node revealed" : `${n} nodes revealed`;
   }
+}
+
+// ---- diagnostics (unresolved references + extract errors) ----
+diagnosticsBtnEl.addEventListener("click", () => {
+  diagnosticsEl.hidden = !diagnosticsEl.hidden;
+});
+diagnosticsCloseEl.addEventListener("click", () => {
+  diagnosticsEl.hidden = true;
+});
+
+// Surface the graph's unresolved references and extract errors (carried through the
+// build/load, previously never shown). The button appears only when there's something
+// to report; the panel lists a capped, escaped sample of each.
+function updateDiagnosticsUI(): void {
+  const d = currentMeta?.diagnostics;
+  const total = (d?.unresolved ?? 0) + (d?.errors ?? 0);
+  if (!d || total === 0) {
+    diagnosticsBtnEl.hidden = true;
+    diagnosticsEl.hidden = true;
+    diagnosticsBodyEl.textContent = "";
+    return;
+  }
+  diagnosticsBtnEl.hidden = false;
+  diagnosticsBtnEl.textContent = `⚠ ${total.toLocaleString()} ${total === 1 ? "issue" : "issues"}`;
+  renderDiagnostics(d);
+}
+
+function renderDiagnostics(d: NonNullable<Meta["diagnostics"]>): void {
+  diagnosticsBodyEl.textContent = ""; // clear
+  const section = (title: string, count: number, sample: string[]): void => {
+    if (count === 0) return;
+    const wrap = document.createElement("details");
+    wrap.className = "diag-section";
+    wrap.open = count <= 20;
+    const summary = document.createElement("summary");
+    summary.textContent = `${title} · ${count.toLocaleString()}`;
+    wrap.appendChild(summary);
+    const list = document.createElement("div");
+    list.className = "diag-list";
+    for (const line of sample) {
+      const row = document.createElement("div");
+      row.className = "diag-row";
+      row.textContent = line; // textContent — no HTML injection from graph data
+      list.appendChild(row);
+    }
+    if (count > sample.length) {
+      const more = document.createElement("div");
+      more.className = "diag-more muted";
+      more.textContent = `… and ${(count - sample.length).toLocaleString()} more`;
+      list.appendChild(more);
+    }
+    wrap.appendChild(list);
+    diagnosticsBodyEl.appendChild(wrap);
+  };
+  section("Unresolved references", d.unresolved, d.unresolvedSample);
+  section("Extract errors", d.errors, d.errorSample);
 }
 
 // "all / none" quick toggles.

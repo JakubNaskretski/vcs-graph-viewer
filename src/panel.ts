@@ -1,7 +1,8 @@
+import { randomBytes } from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
 import { Graph } from "./graph/types";
-import { containerId, expandedView, exploreTotals, isNestedId, isNestedType, neighborhood, rollupToContainers, topConnectedSlice } from "./graph/rollup";
+import { containerId, expandedView, exploreTotals, isNestedId, isNestedType, neighborhood, parentMapFromEdges, rollupToContainers, topConnectedSlice } from "./graph/rollup";
 import type { ExploreSpec, ExploreTotals } from "./graph/rollup";
 import { GraphSource } from "./sources";
 
@@ -16,6 +17,10 @@ export class GraphPanel {
   private readonly extensionUri: vscode.Uri;
   private disposables: vscode.Disposable[] = [];
   private watcher: vscode.FileSystemWatcher | undefined;
+  // The watcher's own change/create listener disposables, kept out of `this.disposables`
+  // so re-watching (on every setSource) can dispose the previous ones instead of leaking
+  // two listeners per graph switch until the panel closes.
+  private watcherSubs: vscode.Disposable[] = [];
 
   private source: GraphSource | undefined;
   private fullGraph: Graph | undefined;
@@ -33,6 +38,11 @@ export class GraphPanel {
     direction: "both",
   };
   private webviewReady = false;
+  // Monotonic load token. Each reload() bumps it and captures the value; when its
+  // async load() resolves it only commits if the token is still current, so a slow
+  // load that finishes after a newer one (e.g. rapid file changes, or setSource then
+  // an immediate watcher fire) can't overwrite the fresher graph under the new title.
+  private loadToken = 0;
 
   static async createOrShow(context: vscode.ExtensionContext, source: GraphSource): Promise<void> {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
@@ -74,7 +84,8 @@ export class GraphPanel {
           e.affectsConfiguration("graphViewer.physics") ||
           e.affectsConfiguration("graphViewer.spacing") ||
           e.affectsConfiguration("graphViewer.animateOnHover") ||
-          e.affectsConfiguration("graphViewer.motionMaxNodes")
+          e.affectsConfiguration("graphViewer.motionMaxNodes") ||
+          e.affectsConfiguration("graphViewer.maxRelatedNodes")
         ) {
           this.postSettings();
         }
@@ -84,13 +95,22 @@ export class GraphPanel {
     );
   }
 
-  private readSettings(): { physics: boolean; spacing: number; animateOnHover: boolean; motionMaxNodes: number } {
+  private readSettings(): {
+    physics: boolean;
+    spacing: number;
+    animateOnHover: boolean;
+    motionMaxNodes: number;
+    relatedStep: number;
+  } {
     const c = vscode.workspace.getConfiguration("graphViewer");
     return {
       physics: c.get<boolean>("physics", true),
       spacing: c.get<number>("spacing", 220),
       animateOnHover: c.get<boolean>("animateOnHover", true),
       motionMaxNodes: c.get<number>("motionMaxNodes", 800),
+      // How many related mains each neighbour/source "＋" step reveals — the (formerly
+      // dead) graphViewer.maxRelatedNodes setting. Floored at 1 so a step always moves.
+      relatedStep: Math.max(1, c.get<number>("maxRelatedNodes", 10)),
     };
   }
 
@@ -113,18 +133,28 @@ export class GraphPanel {
   /** Re-load the current source and push it to the webview. */
   async reload(): Promise<void> {
     if (!this.source) return;
+    const token = ++this.loadToken;
+    const source = this.source;
     try {
-      this.fullGraph = await this.source.load();
+      const graph = await source.load();
+      // A newer reload (or a source switch) started while we were loading — discard
+      // this stale result rather than clobber the fresher graph/title.
+      if (token !== this.loadToken || this.source !== source) return;
+      this.fullGraph = graph;
       this.rolledGraph = undefined;
       this.explore.clear(); // ids may have changed; start from the overview
       this.focus.active = false;
       this.post();
     } catch (err) {
+      if (token !== this.loadToken) return; // a superseded load's error is not the current state
       void vscode.window.showErrorMessage(`Graph Explorer: ${(err as Error).message}`);
     }
   }
 
   private setupWatcher(source: GraphSource): void {
+    // Tear down the previous watcher AND its listeners before creating new ones —
+    // otherwise every graph switch leaks two event disposables into the panel.
+    for (const d of this.watcherSubs.splice(0)) d.dispose();
     this.watcher?.dispose();
     this.watcher = undefined;
     if (!source.watchPath) return;
@@ -136,9 +166,7 @@ export class GraphPanel {
         void this.reload();
       }
     };
-    this.watcher.onDidChange(onChange, null, this.disposables);
-    this.watcher.onDidCreate(onChange, null, this.disposables);
-    this.disposables.push(this.watcher);
+    this.watcherSubs.push(this.watcher.onDidChange(onChange), this.watcher.onDidCreate(onChange), this.watcher);
   }
 
   private onMessage(msg: {
@@ -246,8 +274,10 @@ export class GraphPanel {
     }
     // Reveal the hit: expand the members of its container (or itself, if it's a main
     // node) so a nested hit becomes visible, and echo the hit id so the webview
-    // selects it. Additive — the rest of the overview stays.
-    const root = isNestedId(hit) ? containerId(hit) : hit;
+    // selects it. Additive — the rest of the overview stays. containerId gets the
+    // `contains`-derived parent map so an OmniStudio element hit expands its real
+    // parent (omniscript/…), not a nonexistent flow/<Name>.
+    const root = isNestedId(hit) ? containerId(hit, parentMapFromEdges(this.fullGraph)) : hit;
     const cur = this.explore.get(root) ?? { members: false, neighbors: 0, sources: 0 };
     this.explore.set(root, { ...cur, members: true });
     this.post(hit);
@@ -278,6 +308,10 @@ export class GraphPanel {
   private post(expandRoot?: string): void {
     if (!this.webviewReady || !this.fullGraph || !this.source) return;
     const total = this.fullGraph.nodes.length;
+    const renderCap = Math.max(
+      100,
+      vscode.workspace.getConfiguration("graphViewer").get<number>("maxRenderNodes", 1500),
+    );
     const mode = this.viewMode === "auto" ? (total > BIG_GRAPH ? "containers" : "all") : this.viewMode;
     const exploring = mode === "containers" && this.explore.size > 0;
     const focusing = mode === "all" && this.focus.active && !!this.focus.rootId;
@@ -315,7 +349,13 @@ export class GraphPanel {
       );
       const sliced = topConnectedSlice(this.rolledGraph, cap, cap * 4);
       capDropped = sliced.dropped;
-      graph = exploring ? expandedView(this.fullGraph, sliced.graph, this.explore) : sliced.graph;
+      // Bound the drill-in the same way as the overview: a single "Expand members" on
+      // a container with thousands of children must not blow past the render cap and
+      // freeze the layout. Allow the expanded view to grow to a few × the base cap
+      // (the user deliberately drilled in) but never unbounded.
+      graph = exploring
+        ? expandedView(this.fullGraph, sliced.graph, this.explore, cap * 4)
+        : sliced.graph;
       if (exploring && expandRoot) {
         rootInfo = {
           id: expandRoot,
@@ -337,14 +377,37 @@ export class GraphPanel {
         shownNodes: graph.nodes.length,
         shownEdges: graph.edges.length,
         hasNested: this.fullGraph.nodes.some((n) => isNestedType(n.type)),
+        // True when the full graph is bigger than the render cap, so a capped view
+        // would actually drop nodes. Lets the webview offer the capped/full toggle on
+        // a GENERIC (no-nested-types) graph only when there's a real difference.
+        capAvailable: total > renderCap,
         exploring,
         expanded: [...this.explore.keys()],
         expandedCount: this.explore.size,
         capDropped,
         rootInfo,
         focusInfo,
+        diagnostics: this.diagnostics(),
       },
     });
+  }
+
+  /** Summarize the graph's `unresolved` (edges whose target wasn't found — dangling
+   *  references) and `errors` (files the builder failed to extract) into counts plus a
+   *  capped, readable sample, for the webview's collapsible Diagnostics section. The
+   *  data is carried through validation and stored but had no UI before.
+   *  Shapes vary (builder output vs. an imported graph.json), so each entry is rendered
+   *  defensively into a one-line string. */
+  private diagnostics(): { unresolved: number; errors: number; unresolvedSample: string[]; errorSample: string[] } {
+    const CAP = 100;
+    const unresolvedRaw = this.fullGraph?.unresolved ?? [];
+    const errorsRaw = this.fullGraph?.errors ?? [];
+    return {
+      unresolved: unresolvedRaw.length,
+      errors: errorsRaw.length,
+      unresolvedSample: unresolvedRaw.slice(0, CAP).map((u) => describeUnresolved(u)),
+      errorSample: errorsRaw.slice(0, CAP).map((e) => describeError(e)),
+    };
   }
 
   private html(): string {
@@ -354,7 +417,7 @@ export class GraphPanel {
     const nonce = makeNonce();
     const csp = [
       `default-src 'none'`,
-      `img-src ${webview.cspSource} https: data:`,
+      `img-src ${webview.cspSource} data:`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `font-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
@@ -387,11 +450,16 @@ export class GraphPanel {
         <button id="focus-clear" title="Clear focus and show the whole view again">✕ clear</button>
       </span>
       <span class="spacer"></span>
+      <button id="diagnostics-btn" class="mode-btn" hidden title="Unresolved references and files that failed to parse in this graph"></button>
       <button id="layout-mode" class="layout-btn" title="Toggle layout: force-directed vs grouped by type">Layout: Force</button>
       <button id="relayout" title="Re-run layout">Re-layout</button>
       <button id="fit" title="Fit graph to view">Fit</button>
       <button id="toggle-filters" title="Show/hide filters">Filters</button>
     </div>
+    <aside id="diagnostics" hidden>
+      <div class="diag-head"><h3>Diagnostics</h3><button id="diagnostics-close" title="Close">✕</button></div>
+      <div id="diagnostics-body"></div>
+    </aside>
     <aside id="filters">
       <section>
         <h3>Node types</h3>
@@ -414,6 +482,7 @@ export class GraphPanel {
 
   private dispose(): void {
     GraphPanel.current = undefined;
+    for (const d of this.watcherSubs.splice(0)) d.dispose();
     this.watcher?.dispose();
     this.panel.dispose();
     while (this.disposables.length) {
@@ -422,11 +491,48 @@ export class GraphPanel {
   }
 }
 
+// Cryptographically strong CSP nonce: 128 bits from the OS CSPRNG, base64url-encoded.
+// A predictable nonce (Math.random) could let injected markup satisfy the
+// `script-src 'nonce-…'` policy. Lifted from sf-kit's getNonce.
 function makeNonce(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
+  return randomBytes(16).toString("base64url");
+}
+
+/** One-line description of an `unresolved` entry. Builder shape is
+ *  `{ src, type, to_kind, to_name, reason }`; imported graphs may differ, so fall
+ *  back to JSON. Plain strings only — the webview escapes them. */
+function describeUnresolved(u: unknown): string {
+  if (u && typeof u === "object" && !Array.isArray(u)) {
+    const o = u as Record<string, unknown>;
+    const src = typeof o.src === "string" ? o.src : "?";
+    const type = typeof o.type === "string" ? o.type : "?";
+    const toKind = typeof o.to_kind === "string" ? o.to_kind : undefined;
+    const toName = typeof o.to_name === "string" ? o.to_name : undefined;
+    if (toKind || toName) {
+      const reason = typeof o.reason === "string" ? ` — ${o.reason}` : "";
+      return `${src} ${type} → ${toKind ?? "?"}/${toName ?? "?"}${reason}`;
+    }
   }
-  return text;
+  return safeJson(u);
+}
+
+/** One-line description of an `errors` entry. Builder shape is
+ *  `{ source, path, error }`; imported graphs may differ. */
+function describeError(e: unknown): string {
+  if (e && typeof e === "object" && !Array.isArray(e)) {
+    const o = e as Record<string, unknown>;
+    const p = typeof o.path === "string" ? o.path : undefined;
+    const err = typeof o.error === "string" ? o.error : undefined;
+    if (p || err) return `${p ?? "?"}: ${err ?? "?"}`;
+  }
+  return safeJson(e);
+}
+
+function safeJson(v: unknown): string {
+  try {
+    const s = JSON.stringify(v);
+    return s.length > 300 ? `${s.slice(0, 297)}…` : s;
+  } catch {
+    return String(v);
+  }
 }

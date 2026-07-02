@@ -6,7 +6,16 @@
 import { Graph, GraphEdge, GraphNode } from "./types";
 
 // A nested node's id is "<type>/<Parent>.<child>"; its container is
-// "<parentType>/<Parent>".
+// "<parentType>/<Parent>". This default mapping is the fallback: it assumes the
+// container type can be inferred from the child type alone, which is true for
+// field/recordtype/listview (-> object) and apexmethod (-> apexclass) but NOT for
+// `flowelement`. A flowelement id is "flowelement/<ParentName>.<Element>", and the
+// SAME shape is emitted by two different parent kinds — real Flows (parent
+// "flow/<Name>") AND OmniStudio components (parent "omniscript/" |
+// "integrationprocedure/" | "datamapper/" | "flexcard/"). The id alone can't tell
+// them apart, so `flow` here is only a last-resort guess; the real parent is taken
+// from the node's `contains` edge (see parentMapFromEdges / containerId's `parents`
+// argument), which encodes the true parent type in its src id.
 const NESTED_PARENT: Record<string, string> = {
   field: "object",
   recordtype: "object",
@@ -26,8 +35,31 @@ export function isNestedId(id: string): boolean {
   return slash > 0 && id.slice(0, slash) in NESTED_PARENT;
 }
 
-/** Map any node id to its container id (nested -> parent; container -> itself). */
-export function containerId(id: string): string {
+/** Map from a nested node id to its REAL parent (container) id, derived from the
+ *  `contains` edges in a graph. This is the authoritative source of a nested node's
+ *  parent: the emitting extractor always writes `<parentId> --contains--> <nestedId>`,
+ *  and the parent id carries the true parent type (e.g. `omniscript/Foo`), which the
+ *  nested id itself does not. Only `contains` edges whose dst is a nested id are kept
+ *  (a Flow can also `contains` non-nested things in theory; nested-only keeps this
+ *  strictly a rollup index). */
+export function parentMapFromEdges(graph: Graph): Map<string, string> {
+  const parents = new Map<string, string>();
+  for (const e of graph.edges) {
+    if (e.type === "contains" && isNestedId(e.dst)) parents.set(e.dst, e.src);
+  }
+  return parents;
+}
+
+/** Map any node id to its container id (nested -> parent; container -> itself).
+ *  When a `parents` map (from {@link parentMapFromEdges}) is supplied and knows this
+ *  id, its `contains`-derived parent wins — this is what makes OmniStudio elements
+ *  (omniscript/integrationprocedure/datamapper/flexcard) roll up correctly instead of
+ *  to a nonexistent `flow/<Name>`. Without a `parents` entry it falls back to the
+ *  type-based {@link NESTED_PARENT} guess (Flow elements, or graphs missing the
+ *  `contains` edge). */
+export function containerId(id: string, parents?: Map<string, string>): string {
+  const fromEdge = parents?.get(id);
+  if (fromEdge) return fromEdge;
   const slash = id.indexOf("/");
   if (slash < 0) return id;
   const parentType = NESTED_PARENT[id.slice(0, slash)];
@@ -40,11 +72,12 @@ export function containerId(id: string): string {
 /** Collapse nested nodes into their containers and roll edges up. Self-edges and
  *  edges to a missing container are dropped; parallel edges are de-duplicated. */
 export function rollupToContainers(graph: Graph): Graph {
+  const parents = parentMapFromEdges(graph);
   const containers: GraphNode[] = [];
   const childCounts = new Map<string, number>();
   for (const n of graph.nodes) {
     if (isNestedType(n.type)) {
-      const parent = containerId(n.id);
+      const parent = containerId(n.id, parents);
       childCounts.set(parent, (childCounts.get(parent) ?? 0) + 1);
     } else {
       containers.push(n);
@@ -59,8 +92,8 @@ export function rollupToContainers(graph: Graph): Graph {
   const seen = new Set<string>();
   const edges: GraphEdge[] = [];
   for (const e of graph.edges) {
-    const s = containerId(e.src);
-    const d = containerId(e.dst);
+    const s = containerId(e.src, parents);
+    const d = containerId(e.dst, parents);
     if (s === d || !ids.has(s) || !ids.has(d)) continue;
     const key = `${s} ${e.type} ${d}`;
     if (seen.has(key)) continue;
@@ -73,9 +106,9 @@ export function rollupToContainers(graph: Graph): Graph {
 /** Resolve an edge endpoint to how it should appear given which containers are
  *  expanded: a nested node stays itself when its container is expanded, otherwise
  *  rolls up to that container; a container/main always resolves to itself. */
-function resolveEndpoint(id: string, expanded: Set<string>): string {
+function resolveEndpoint(id: string, expanded: Set<string>, parents?: Map<string, string>): string {
   if (!isNestedId(id)) return id;
-  const cont = containerId(id);
+  const cont = containerId(id, parents);
   return expanded.has(cont) ? id : cont;
 }
 
@@ -203,13 +236,14 @@ export function neighborhood(
  *  containers and rolled-up for everything else. Computed in the host so the
  *  webview only ever holds this small focused slice, never the full graph. */
 export function exploreView(full: Graph, expanded: Set<string>, maxRelated: number): ExploreResult {
+  const parents = parentMapFromEdges(full);
   const allById = new Map(full.nodes.map((n) => [n.id, n]));
   const childCounts = new Map<string, number>();
   const childrenByContainer = new Map<string, GraphNode[]>();
   const mainIds = new Set<string>();
   for (const n of full.nodes) {
     if (isNestedType(n.type)) {
-      const c = containerId(n.id);
+      const c = containerId(n.id, parents);
       childCounts.set(c, (childCounts.get(c) ?? 0) + 1);
       const list = childrenByContainer.get(c);
       if (list) list.push(n);
@@ -230,8 +264,8 @@ export function exploreView(full: Graph, expanded: Set<string>, maxRelated: numb
   for (const c of expanded) {
     const weight = new Map<string, number>();
     for (const e of full.edges) {
-      const sc = isNestedId(e.src) ? containerId(e.src) : e.src;
-      const dc = isNestedId(e.dst) ? containerId(e.dst) : e.dst;
+      const sc = isNestedId(e.src) ? containerId(e.src, parents) : e.src;
+      const dc = isNestedId(e.dst) ? containerId(e.dst, parents) : e.dst;
       const other = sc === c && dc !== c ? dc : dc === c && sc !== c ? sc : undefined;
       if (other && mainIds.has(other)) weight.set(other, (weight.get(other) ?? 0) + 1);
     }
@@ -252,8 +286,8 @@ export function exploreView(full: Graph, expanded: Set<string>, maxRelated: numb
   const seen = new Set<string>();
   const edges: GraphEdge[] = [];
   for (const e of full.edges) {
-    const s = resolveEndpoint(e.src, expanded);
-    const d = resolveEndpoint(e.dst, expanded);
+    const s = resolveEndpoint(e.src, expanded, parents);
+    const d = resolveEndpoint(e.dst, expanded, parents);
     if (s === d || !nodeIds.has(s) || !nodeIds.has(d)) continue;
     const key = `${s} ${e.type} ${d}`;
     if (seen.has(key)) continue;
@@ -288,11 +322,12 @@ export interface ExploreTotals {
 /** How much is available to reveal around `id` (computed from the full graph), so the
  *  Explore block can show counts and stop `+` at the maximum. */
 export function exploreTotals(full: Graph, id: string): ExploreTotals {
+  const parents = parentMapFromEdges(full);
   const mainIds = new Set<string>();
   let members = 0;
   for (const n of full.nodes) {
     if (isNestedType(n.type)) {
-      if (containerId(n.id) === id) members++;
+      if (containerId(n.id, parents) === id) members++;
     } else {
       mainIds.add(n.id);
     }
@@ -300,8 +335,8 @@ export function exploreTotals(full: Graph, id: string): ExploreTotals {
   const neighbors = new Set<string>();
   const sources = new Set<string>();
   for (const e of full.edges) {
-    const sc = isNestedId(e.src) ? containerId(e.src) : e.src;
-    const dc = isNestedId(e.dst) ? containerId(e.dst) : e.dst;
+    const sc = isNestedId(e.src) ? containerId(e.src, parents) : e.src;
+    const dc = isNestedId(e.dst) ? containerId(e.dst, parents) : e.dst;
     if (sc === id && dc !== id && mainIds.has(dc)) neighbors.add(dc);
     if (dc === id && sc !== id && mainIds.has(sc)) {
       neighbors.add(sc);
@@ -313,12 +348,17 @@ export function exploreTotals(full: Graph, id: string): ExploreTotals {
 
 /** A root's neighbour mains ranked by edge weight (desc, id asc for determinism),
  *  split into all-directions and incoming-only. */
-function rankedNeighbors(full: Graph, id: string, mainIds: Set<string>): { both: string[]; incoming: string[] } {
+function rankedNeighbors(
+  full: Graph,
+  id: string,
+  mainIds: Set<string>,
+  parents: Map<string, string>,
+): { both: string[]; incoming: string[] } {
   const w = new Map<string, number>();
   const inc = new Map<string, number>();
   for (const e of full.edges) {
-    const sc = isNestedId(e.src) ? containerId(e.src) : e.src;
-    const dc = isNestedId(e.dst) ? containerId(e.dst) : e.dst;
+    const sc = isNestedId(e.src) ? containerId(e.src, parents) : e.src;
+    const dc = isNestedId(e.dst) ? containerId(e.dst, parents) : e.dst;
     if (sc === id && dc !== id && mainIds.has(dc)) w.set(dc, (w.get(dc) ?? 0) + 1);
     if (dc === id && sc !== id && mainIds.has(sc)) {
       w.set(sc, (w.get(sc) ?? 0) + 1);
@@ -332,15 +372,28 @@ function rankedNeighbors(full: Graph, id: string, mainIds: Set<string>): { both:
 
 /** Additive explore view: the `base` (capped overview) PLUS, around each explored
  *  root, its members / neighbour mains / source mains per its spec. Edges render at
- *  child level for member-expanded roots, rolled-up otherwise. The base stays. */
-export function expandedView(full: Graph, base: Graph, explore: Map<string, ExploreSpec>): Graph {
+ *  child level for member-expanded roots, rolled-up otherwise. The base stays.
+ *
+ *  `maxNodes` bounds the total node count: member expansion (which can add thousands
+ *  of children at once) stops adding once the view reaches the cap, so a single
+ *  "Expand members" on a huge container can't bypass `graphViewer.maxRenderNodes` and
+ *  freeze the layout. `Infinity` disables the cap. Neighbour/source reveals are
+ *  already bounded per step by the caller (maxRelatedNodes) so they aren't re-capped
+ *  here — but they still count against the budget that members see. */
+export function expandedView(
+  full: Graph,
+  base: Graph,
+  explore: Map<string, ExploreSpec>,
+  maxNodes = Infinity,
+): Graph {
+  const parents = parentMapFromEdges(full);
   const allById = new Map(full.nodes.map((n) => [n.id, n]));
   const childCounts = new Map<string, number>();
   const childrenByContainer = new Map<string, GraphNode[]>();
   const mainIds = new Set<string>();
   for (const n of full.nodes) {
     if (isNestedType(n.type)) {
-      const c = containerId(n.id);
+      const c = containerId(n.id, parents);
       childCounts.set(c, (childCounts.get(c) ?? 0) + 1);
       let list = childrenByContainer.get(c);
       if (!list) {
@@ -355,16 +408,23 @@ export function expandedView(full: Graph, base: Graph, explore: Map<string, Expl
 
   const nodeIds = new Set<string>(base.nodes.map((n) => n.id));
   const memberExpanded = new Set<string>();
+  // Reveal neighbour/source mains first (small, per-step bounded), then members.
+  // Members are what can explode, so they consume whatever node budget is left after
+  // the base + the ring reveals — keeping the total under `maxNodes`.
   for (const [root, spec] of explore) {
     if (mainIds.has(root)) nodeIds.add(root);
-    if (spec.members) {
-      memberExpanded.add(root);
-      for (const ch of childrenByContainer.get(root) ?? []) nodeIds.add(ch.id);
-    }
     if (spec.neighbors > 0 || spec.sources > 0) {
-      const { both, incoming } = rankedNeighbors(full, root, mainIds);
+      const { both, incoming } = rankedNeighbors(full, root, mainIds, parents);
       for (const m of both.slice(0, Math.max(0, spec.neighbors))) nodeIds.add(m);
       for (const m of incoming.slice(0, Math.max(0, spec.sources))) nodeIds.add(m);
+    }
+  }
+  for (const [root, spec] of explore) {
+    if (!spec.members) continue;
+    memberExpanded.add(root);
+    for (const ch of childrenByContainer.get(root) ?? []) {
+      if (nodeIds.size >= maxNodes && !nodeIds.has(ch.id)) break; // budget spent — stop adding children
+      nodeIds.add(ch.id);
     }
   }
 
@@ -377,7 +437,7 @@ export function expandedView(full: Graph, base: Graph, explore: Map<string, Expl
   }
 
   const resolve = (eid: string): string =>
-    isNestedId(eid) && !memberExpanded.has(containerId(eid)) ? containerId(eid) : eid;
+    isNestedId(eid) && !memberExpanded.has(containerId(eid, parents)) ? containerId(eid, parents) : eid;
   const seen = new Set<string>();
   const edges: GraphEdge[] = [];
   for (const e of full.edges) {

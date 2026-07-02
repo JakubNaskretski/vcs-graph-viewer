@@ -192,8 +192,8 @@
         "graphViewer.maxRelatedNodes": {
           "type": "number",
           "default": 10,
-          "minimum": 0,
-          "description": "When you expand a node in the container view, how many related main nodes (its most-connected neighbors) to reveal alongside its members. Higher shows more of the surrounding graph per step; lower keeps each drill-in tightly focused."
+          "minimum": 1,
+          "description": "When you expand a node in the container view, how many related main nodes (its most-connected neighbors, or its sources) each '+' step reveals. Higher shows more of the surrounding graph per step; lower keeps each drill-in tightly focused."
         },
         "graphViewer.maxRenderNodes": {
           "type": "number",
@@ -214,6 +214,8 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "check-types": "tsc --noEmit",
+    "compile-tests": "tsc -p tsconfig.test.json",
+    "test": "npm run compile-tests && node --test \"out-test/**/*.test.js\"",
     "package": "npx -y @vscode/vsce@latest package --no-dependencies --allow-missing-repository"
   },
   "dependencies": {

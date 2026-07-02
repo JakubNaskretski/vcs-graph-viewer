@@ -10,6 +10,8 @@ samples/**
 **/*.graph.json
 esbuild.js
 tsconfig.json
+tsconfig.test.json
+out-test/**
 **/*.map
 **/*.ts
 *.vsix

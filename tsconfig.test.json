@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "out-test",
+    "rootDir": "src",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "sourceMap": false,
+    "noEmit": false
+  },
+  "include": ["src/graph/**/*.ts", "src/builder/**/*.ts"],
+  "exclude": ["node_modules", "dist", "out-test"]
+}

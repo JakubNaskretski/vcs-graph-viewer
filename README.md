@@ -16,23 +16,30 @@ click any node to read its attributes and relationships.
   module-level view instead of a frozen hairball. A **Show all** toggle in the
   toolbar expands to every node (behind a confirmation, since it can be heavy).
 - **Expand a container in place** — in the container map, select a rolled-up node
-  (an Apex class, object, or flow) and hit **⊕ Expand members** to *drill in*: the
-  map narrows to that node, its members (methods/fields/elements), and the related
-  nodes they connect to (kept collapsed). Expand those in turn to **walk the graph
-  one step at a time**; **⊖ Collapse members** rolls a node back up and **reset**
-  returns to the overview. *Max Related Nodes* controls how many neighbors each
-  step reveals.
+  (an Apex class, object, or flow) and reveal, *on top of* the overview, its members
+  (methods/fields/elements) with **⊕**, plus its most-connected neighbors and the
+  nodes that point into it with the **＋ / −** steppers — the rest of the map stays.
+  Expand those in turn to **walk the graph one step at a time**; **⊖** rolls a node's
+  members back up and **reset** returns to the overview. *Max Related Nodes* controls
+  how many neighbors/sources each **＋** step reveals; member expansion is bounded by
+  *Max Render Nodes* so a huge container can't freeze the layout.
 - **Filters** — toggle node types and edge types on/off to focus the map; search
   nodes by name. Work in either the container map or the full graph. Each **node
   type expands** into a searchable list of its own nodes, so you can drill into,
   say, *Apex class* and tick exactly which classes to show (with per-type all/none
   and a name search built to handle thousands of members).
-- **Focus a single node** — click a node and hit **Focus on this node** (or type its
-  name in the search box and press **Enter**) to narrow the map to just that node and
-  its neighborhood. A depth control (1–3 hops) widens the ring; **clear** restores the
-  full view — for when you want *just this one object/class and what it touches*.
+- **Focus a single node** — click a node and hit **Focus** (or type its name in the
+  search box and press **Enter**) to narrow the map to just that node and its
+  neighborhood. A depth control widens the ring one hop at a time (from 1 hop
+  upward); a direction toggle picks what it *calls/uses*, what *calls/uses it*, or
+  both; **clear** restores the full view — for when you want *just this one
+  object/class and what it touches*.
 - **Node details** — click a node to see its attributes plus every incoming and
   outgoing relationship, grouped by edge type. Click a related node to jump to it.
+- **Diagnostics** — when a graph carries unresolved references (edges pointing at
+  something not in the source) or files that failed to parse, a **⚠** button appears
+  in the toolbar; click it for a collapsible list of what couldn't be resolved or
+  extracted.
 - **Graphs side panel** — a library of your graphs in the Activity Bar. Generate,
   import, open, and delete from there. Graphs are kept in the extension's private
   storage, so they never land in your repo.
@@ -78,7 +85,7 @@ The graph is plain JSON; any tool that emits the same shape works:
 | `graphViewer.spacing`         | `220`   | Spacing between nodes (20–500). Higher spreads the graph out more. |
 | `graphViewer.animateOnHover`  | `true`  | On hover, dim the rest of the graph and enlarge + highlight the node and its neighbors. |
 | `graphViewer.motionMaxNodes`  | `800`   | Above this node count the gentle drift turns off so large graphs stay responsive. |
-| `graphViewer.maxRelatedNodes` | `10`    | When you expand a container node, how many related main nodes to reveal per step (0–∞). |
+| `graphViewer.maxRelatedNodes` | `10`    | How many related main nodes each neighbor/source **＋** step reveals when you expand a container node (≥1). |
 | `graphViewer.maxRenderNodes`  | `1500`  | Hard cap on nodes drawn at once (≥100). Above it, only the most-connected nodes render; search and drill-in still reach everything. "Show all" bypasses it. |
 
 Appearance settings apply live — no reload needed.
