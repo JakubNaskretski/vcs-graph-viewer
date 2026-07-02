@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0
+
+- **OmniStudio components now show their real connections.** OmniScript,
+  Integration Procedure, DataMapper, and FlexCard elements roll up to their
+  actual parent component, so edges like "OmniScript calls Apex class" appear
+  in the container view instead of silently disappearing.
+- **Diagnostics panel.** When a graph carries unresolved references or build
+  errors, a ⚠ toolbar button opens a list of them — previously this
+  information was stored but never shown.
+- Graphs without nested types are no longer stuck at the capped view: the
+  "Show all" toggle now appears for them too (with the usual size confirm).
+- The `graphViewer.maxRelatedNodes` setting now actually controls how many
+  related nodes each expansion step adds (it was previously ignored), and
+  expanding a huge container respects the render budget instead of freezing
+  the layout.
+- Faster "Generate from folder" on version-heavy OmniStudio directories
+  (sibling files are now parsed once per folder, not once per file).
+- Fixed a race where switching graphs while one was still loading could show
+  the old graph under the new title; README descriptions brought up to date.
+
 ## 0.8.2
 
 ### Focus is much clearer now
