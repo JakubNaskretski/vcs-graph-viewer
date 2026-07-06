@@ -188,8 +188,8 @@ interface Island {
 let groupedIslands: Island[] = [];
 
 // Node sizing: base radius mapped from degree, like the old mapData(deg,0,maxDeg,14,52).
-const SIZE_MIN = 4;
-const SIZE_MAX = 20;
+const SIZE_MIN = 3;
+const SIZE_MAX = 12;
 const HOVER_SCALE = 1.6;
 
 // ---- gentle-drift animation state ----
@@ -368,7 +368,9 @@ function build(g: GraphData): void {
   g.nodes.forEach((n, i) => {
     if (m.hasNode(n.id)) return; // ignore accidental duplicate ids (cytoscape errored)
     const deg = degree.get(n.id) ?? 0;
-    const size = SIZE_MIN + (maxDeg > 0 ? (deg / maxDeg) * (SIZE_MAX - SIZE_MIN) : 0);
+    // sqrt keeps mid-degree nodes small — with linear scaling the map is ~20% solid
+    // ink at fit and reads as one condensed mass however good the layout is.
+    const size = SIZE_MIN + (maxDeg > 0 ? Math.sqrt(deg / maxDeg) * (SIZE_MAX - SIZE_MIN) : 0);
     const base = typeColor(n.type);
     // Seed positions on a circle so forceAtlas2 has something to push apart (it
     // can't separate coincident nodes) and nothing renders stacked at (0,0).
@@ -614,7 +616,7 @@ function runLayout(): void {
 }
 
 // Force layout via forceAtlas2 (synchronous, on the main thread). The default view
-// is render-capped (graphViewer.maxRenderNodes = 1500), where this is ~0.4s. Only
+// is render-capped (graphViewer.maxRenderNodes = 1500), where this is ~0.8s. Only
 // the opt-in "Show all" path feeds tens of thousands of nodes; there FA2 is steered
 // down to a few iterations to bound the main-thread block (grouped mode, which is
 // O(n) and instant, is the recommended layout for big graphs). A web-worker FA2
@@ -623,22 +625,27 @@ function runLayout(): void {
 function runForceLayout(): void {
   if (!model) return;
   const nodes = model.order;
-  const edges = model.size;
   const iterations =
-    nodes <= 200 ? 400 : nodes <= 2000 ? 120 : edges > 6000 || nodes > 6000 ? (nodes > 15000 ? 12 : 30) : 60;
+    nodes <= 200 ? 500 : nodes <= 2000 ? 400 : nodes <= 6000 ? 150 : nodes <= 15000 ? 60 : 20;
   const spacing = settings.spacing;
   forceAtlas2.assign(model, {
     iterations,
     settings: {
-      // Spread harder: weak gravity so things don't pile into one clump, high
-      // repulsion (scalingRatio) to push neighbors apart, Barnes-Hut to stay cheap
-      // on big/dense slices. Maps the old fcose spread knobs onto FA2.
-      gravity: 0.3,
-      scalingRatio: 16 + spacing / 9,
-      slowDown: 1 + nodes / 5000,
+      // LinLog + strong gravity is what makes the map read like Obsidian's instead
+      // of a condensed ball: log-scaled attraction stops dense hub cores collapsing
+      // onto each other (plain FA2 attraction has no rest length, so the old config
+      // packed the whole view into ~20% of the canvas), and strong gravity keeps
+      // stray satellites from stretching the fit view. LinLog converges slower,
+      // hence the higher iteration tiers. Sweep-verified on the bundled example
+      // orgs (dev/sweep-fa2.mjs): ~80x fewer overlapping node pairs on the capped
+      // view, and the 36k org's Show-all separates into visible type regions.
+      linLogMode: true,
+      strongGravityMode: true,
+      gravity: 0.05,
+      scalingRatio: Math.max(1, spacing / 70),
+      slowDown: 1 + Math.log(nodes),
       barnesHutOptimize: nodes > 1000,
       barnesHutTheta: 0.6,
-      edgeWeightInfluence: 0,
     },
   });
   refreshIndexed();
