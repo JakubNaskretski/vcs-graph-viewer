@@ -368,8 +368,8 @@ function build(g: GraphData): void {
   g.nodes.forEach((n, i) => {
     if (m.hasNode(n.id)) return; // ignore accidental duplicate ids (cytoscape errored)
     const deg = degree.get(n.id) ?? 0;
-    // sqrt keeps mid-degree nodes small — with linear scaling the map is ~20% solid
-    // ink at fit and reads as one condensed mass however good the layout is.
+    // sqrt so hub sizes don't drown the map: linear degree scaling covers the
+    // fit view in solid ink.
     const size = SIZE_MIN + (maxDeg > 0 ? Math.sqrt(deg / maxDeg) * (SIZE_MAX - SIZE_MIN) : 0);
     const base = typeColor(n.type);
     // Seed positions on a circle so forceAtlas2 has something to push apart (it
@@ -427,7 +427,7 @@ function build(g: GraphData): void {
     edgeReducer,
   });
 
-  // Dev-only global handles for the headless harness (see dev/). esbuild folds the
+  // Dev-only global handles for the headless test harness. esbuild folds the
   // condition to `false` in production builds and dead-code-eliminates the block.
   if (process.env.NODE_ENV !== "production") {
     (window as unknown as Record<string, unknown>).__sigma = renderer;
@@ -619,9 +619,8 @@ function runLayout(): void {
 // is render-capped (graphViewer.maxRenderNodes = 1500), where this is ~0.8s. Only
 // the opt-in "Show all" path feeds tens of thousands of nodes; there FA2 is steered
 // down to a few iterations to bound the main-thread block (grouped mode, which is
-// O(n) and instant, is the recommended layout for big graphs). A web-worker FA2
-// supervisor — the real fix for async big-graph force — is future work (needs a CSP
-// `worker-src blob:` allowance; see the migration plan).
+// O(n) and instant, is the recommended layout for big graphs). Running FA2 off the
+// main thread would require a CSP `worker-src blob:` allowance.
 function runForceLayout(): void {
   if (!model) return;
   const nodes = model.order;
@@ -631,14 +630,10 @@ function runForceLayout(): void {
   forceAtlas2.assign(model, {
     iterations,
     settings: {
-      // LinLog + strong gravity is what makes the map read like Obsidian's instead
-      // of a condensed ball: log-scaled attraction stops dense hub cores collapsing
-      // onto each other (plain FA2 attraction has no rest length, so the old config
-      // packed the whole view into ~20% of the canvas), and strong gravity keeps
-      // stray satellites from stretching the fit view. LinLog converges slower,
-      // hence the higher iteration tiers. Sweep-verified on the bundled example
-      // orgs (dev/sweep-fa2.mjs): ~80x fewer overlapping node pairs on the capped
-      // view, and the 36k org's Show-all separates into visible type regions.
+      // Log-scaled attraction: plain FA2 attraction has no rest length, so dense
+      // hub cores collapse into a single clump. Strong gravity keeps disconnected
+      // satellites from stretching the fit view. LinLog converges slower, hence
+      // the higher iteration tiers above.
       linLogMode: true,
       strongGravityMode: true,
       gravity: 0.05,
