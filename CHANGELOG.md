@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.0
+
+### A much airier map
+
+- **The force layout no longer collapses into one dense ball.** Attraction between
+  connected nodes is now log-scaled, so hub-heavy graphs spread into readable,
+  visibly separate regions per metadata type — on big orgs the "Show all" view
+  settles into a map you can actually navigate instead of a single clump.
+- **Nodes are smaller and sized more fairly.** Node size now grows with the square
+  root of how connected a node is, so busy hubs stop drowning the map in solid
+  color and the connections between them stay visible.
+- **Disconnected stragglers no longer shrink the view.** Stronger centering keeps
+  isolated nodes near the map instead of flinging them far away and zooming
+  everything else out.
+- The Spacing setting still controls how far the layout spreads; the default
+  (capped) view lays out in under a second.
+
 ## 0.9.0
 
 - **OmniStudio components now show their real connections.** OmniScript,
