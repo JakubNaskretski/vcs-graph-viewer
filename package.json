@@ -2,7 +2,7 @@
   "name": "vcs-graph-viewer",
   "displayName": "Graph Explorer",
   "description": "Visualize and explore a metadata graph (nodes + edges) as an interactive, filterable map — an Obsidian-style graph view inside your editor.",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "publisher": "Skrety",
   "icon": "plugin-icon.png",
   "license": "MIT",
@@ -73,6 +73,12 @@
         "title": "Refresh Library",
         "category": "Graph Explorer",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "graphViewer.help",
+        "title": "How It Works",
+        "category": "Graph Explorer",
+        "icon": "$(question)"
       }
     ],
     "viewsContainers": {
@@ -97,7 +103,7 @@
     "viewsWelcome": [
       {
         "view": "graphViewer.library",
-        "contents": "No graphs in your library yet.\n\nBuild one from a source folder, or import an existing graph.json.\n[Generate from folder](command:graphViewer.generate)\n[Import graph.json](command:graphViewer.import)"
+        "contents": "No graphs in your library yet.\n\nBuild one from a source folder, or import an existing graph.json.\n[Generate from folder](command:graphViewer.generate)\n[Import graph.json](command:graphViewer.import)\n[How it works](command:graphViewer.help)"
       }
     ],
     "menus": {
@@ -133,6 +139,11 @@
           "command": "graphViewer.refreshLibrary",
           "when": "view == graphViewer.library",
           "group": "navigation@3"
+        },
+        {
+          "command": "graphViewer.help",
+          "when": "view == graphViewer.library",
+          "group": "navigation@9"
         }
       ],
       "view/item/context": [

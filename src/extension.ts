@@ -180,7 +180,33 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("graphViewer.refreshLibrary", () => libraryView.refresh()),
+    vscode.commands.registerCommand("graphViewer.help", () => showHelp(context)),
   );
+}
+
+// The "?" in the Graphs view title: a short plain-text guide (a modal's detail renders no markdown).
+async function showHelp(context: vscode.ExtensionContext): Promise<void> {
+  const HELP = `1. Open the Graphs view in the Activity Bar to see your graph library.
+2. Generate from folder builds a graph from a source folder (e.g. force-app); Import adds an existing graph.json.
+3. Click a graph to open the map; hover a row for its rename and delete icons.
+4. On the map: search nodes; select a node, then Focus scopes to it and its neighborhood (full view only); Filters toggle node and edge types; Fit / Re-layout reframe.
+5. Large graphs open as a container map: select a rolled-up node and use ⊕ to reveal its members, ＋ / − to step through neighbors.
+6. Click a node for its attributes and every relationship; click a related node to jump to it.
+7. ⚠ in the toolbar appears when a graph has unresolved references or files that failed to parse.
+8. Graphs are stored by the extension, never in your repo; appearance and size limits are in Settings under Graph Explorer.`;
+  const choice = await vscode.window.showInformationMessage("Graph Explorer", { modal: true, detail: HELP }, "Open README");
+  if (choice === "Open README") {
+    // vsce ships the file as readme.md while the dev host has README.md: open whichever exists
+    for (const name of ["readme.md", "README.md"]) {
+      const uri = vscode.Uri.joinPath(context.extensionUri, name);
+      try {
+        await vscode.workspace.fs.stat(uri);
+        await vscode.commands.executeCommand("markdown.showPreview", uri);
+        return;
+      } catch { /* try the other spelling */ }
+    }
+    void vscode.window.showWarningMessage("README not found in the extension folder.");
+  }
 }
 
 // Generic Salesforce layout dirs that say nothing about the org — skipped when
