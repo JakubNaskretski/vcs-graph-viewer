@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0
+
+### Help at hand
+
+- **?** in the Graphs view title, and a **How it works** link on an empty library, open a short guide to building, opening and exploring a graph, with an **Open README** button for the full documentation.
+
 ## 0.10.0
 
 ### A much airier map
